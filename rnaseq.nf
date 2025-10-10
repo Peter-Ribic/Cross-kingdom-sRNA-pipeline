@@ -33,22 +33,20 @@ workflow {
     
     FETCH_SRA(read_ch)
     
-    //read_ch = Channel.fromPath(params.reads)
-    
     FASTQC(FETCH_SRA.out)
     TRIM_GALORE(FETCH_SRA.out)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
     index_ch = HISAT2_BUILD(file(params.genome_fasta))
     HISAT2_ALIGN(merged_ch, index_ch)
 
-    // qc_ch = FASTQC.out.zip
-    // .mix(
-    //     FASTQC.out.html,
-    //     TRIM_GALORE.out.trimming_reports,
-    //     TRIM_GALORE.out.fastqc_reports,
-    //     HISAT2_ALIGN.out.log
-    // )
-    // .collect()
+    qc_ch = FASTQC.out.zip
+        .mix(
+            FASTQC.out.html,
+            TRIM_GALORE.out.trimming_reports,
+            TRIM_GALORE.out.fastqc_reports,
+            HISAT2_ALIGN.out.log
+        )
+        .collect()
 
-    // MULTIQC(tuple(params.report_id, qc_ch))
+    MULTIQC(params.report_id, qc_ch)
 }

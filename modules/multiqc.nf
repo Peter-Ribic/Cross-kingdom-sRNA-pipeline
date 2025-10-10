@@ -5,7 +5,8 @@ process MULTIQC {
     publishDir "results/multiqc", mode: 'symlink'
 
     input:
-    tuple val(output_name), path(qc_files)
+    val output_name
+    path qc_files
 
     output:
     path "${output_name}.html", emit: report
