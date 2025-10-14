@@ -9,6 +9,7 @@ include { HISAT2_BUILD } from './modules/hisat2_build.nf'
 include { HISAT2_ALIGN } from './modules/hisat2_align.nf'
 include { MULTIQC } from './modules/multiqc.nf'
 include { MERGE_READS } from './modules/merge_reads.nf'
+include { SHORTSTACK } from './modules/shortstack.nf'
 
 
 // params.input_csv = "data/single-end.csv"
@@ -37,6 +38,7 @@ workflow {
     TRIM_GALORE(FETCH_SRA.out)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
     index_ch = HISAT2_BUILD(file(params.genome_fasta))
+    SHORTSTACK(TRIM_GALORE.out.trimmed_reads, file(params.genome_fasta))
     HISAT2_ALIGN(merged_ch, index_ch)
 
     qc_ch = FASTQC.out.zip
