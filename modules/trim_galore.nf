@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
 process TRIM_GALORE {
-
+    tag "$sample_id"
     container "community.wave.seqera.io/library/trim-galore:0.6.10--1bf8ca4e1967cd18"
     publishDir "results/${sample_id}/trimming", mode: 'symlink'
 

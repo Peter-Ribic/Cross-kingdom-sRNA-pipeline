@@ -1,6 +1,7 @@
 #!/usr/bin/env nextflow
 
 process MERGE_READS {
+    tag "$sample_id"
     input:
     tuple val(sample_id), path(reads)
     output:
