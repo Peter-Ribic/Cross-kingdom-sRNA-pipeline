@@ -14,6 +14,7 @@ include { BOWTIE_ALIGN_TO_HOST } from './modules/bowtie_align_to_host.nf'
 include { FILTER_PATHOGEN_READS } from './modules/filter_pathogen_reads.nf'
 include { BOWTIE_BUILD_PATHOGEN } from './modules/bowtie_build_pathogen.nf'
 include { BOWTIE_BUILD_HOST } from './modules/bowtie_build_host.nf'
+include { LIST_PATHOGEN_READS } from './modules/list_pathogen_reads.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -47,8 +48,9 @@ workflow {
 
     align_pathogen_ch = BOWTIE_ALIGN_TO_PATHOGEN(merged_ch, pathogen_index_ch)
     BOWTIE_ALIGN_TO_HOST(align_pathogen_ch, host_index_ch)
-
-    filtered_reads = FILTER_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.filter_input)
+    LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
+    
+    filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
 
     qc_ch = FASTQC.out.zip
