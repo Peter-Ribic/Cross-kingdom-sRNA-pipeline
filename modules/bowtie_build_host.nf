@@ -1,5 +1,5 @@
 process BOWTIE_BUILD_HOST {
-    container "quay.io/biocontainers/bowtie:1.3.1--py39h9046dc2_10"
+    container "biocontainers/bowtie2:v2.4.1_cv1"
     publishDir "results/host_index", mode: 'copy'
 
     input:
@@ -10,6 +10,6 @@ process BOWTIE_BUILD_HOST {
 
     script:
     """
-    bowtie-build $fasta host_index
+    bowtie2-build $fasta host_index
     """
 }

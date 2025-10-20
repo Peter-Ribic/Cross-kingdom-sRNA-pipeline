@@ -1,5 +1,5 @@
 process BOWTIE_BUILD_PATHOGEN {
-    container "quay.io/biocontainers/bowtie:1.3.1--py39h9046dc2_10"
+    container "biocontainers/bowtie2:v2.4.1_cv1"
     publishDir "results/pathogen_index", mode: 'copy'
 
     input:
@@ -10,7 +10,7 @@ process BOWTIE_BUILD_PATHOGEN {
 
     script:
     """
-    bowtie-build $fasta pathogen_index
+    bowtie2-build $fasta pathogen_index
     """
 }
 
