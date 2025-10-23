@@ -11,7 +11,7 @@ process SHORTSTACK {
     path genome_fasta
 
     output:
-    path "ShortStack_out", emit: shortstack_out
+    tuple val(sample_id), path("ShortStack_out"), emit: shortstack_out
 
     script:
     """

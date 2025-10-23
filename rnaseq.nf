@@ -15,6 +15,7 @@ include { FILTER_PATHOGEN_READS } from './modules/filter_pathogen_reads.nf'
 include { BOWTIE_BUILD_PATHOGEN } from './modules/bowtie_build_pathogen.nf'
 include { BOWTIE_BUILD_HOST } from './modules/bowtie_build_host.nf'
 include { LIST_PATHOGEN_READS } from './modules/list_pathogen_reads.nf'
+include { PREDICT_HOP_TARGETS } from './modules/predict_hop_targets.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -52,6 +53,7 @@ workflow {
     
     filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
+    PREDICT_HOP_TARGETS(SHORTSTACK.out.shortstack_out, file(params.host_genome_fasta))
 
     qc_ch = FASTQC.out.zip
         .mix(
