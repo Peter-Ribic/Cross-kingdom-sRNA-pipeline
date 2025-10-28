@@ -23,6 +23,7 @@ process PREDICT_HOP_TARGETS {
         -s ${sample_id}_predicted_sRNAs.fa \
         -d hop_genome_rna.fa \
         -q 7 \
+        -r \
         > ${sample_id}_TargetFinder_results.txt
 
     echo "Done. Results saved to ${sample_id}_TargetFinder_results.txt"
