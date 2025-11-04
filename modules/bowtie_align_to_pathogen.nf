@@ -12,11 +12,12 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
     script:
     """
     bowtie2 \
-        --very-sensitive \
+        --end-to-end \
+        --score-min L,0,-0.1 \
         --no-unal \
         -p ${task.cpus} \
         -x pathogen_index \
-        -U ${reads.join(',')} \
+        -U ${reads} \
         -S ${sample_id}_pathogen_0mm.sam
     
 
