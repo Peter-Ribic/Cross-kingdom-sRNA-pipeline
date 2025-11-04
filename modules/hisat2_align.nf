@@ -16,6 +16,8 @@ process HISAT2_ALIGN {
     """
     hisat2 -x genome_index \
         -U $reads \
+        --no-spliced-alignment \
+        --score-min L,0,0 \
         --new-summary --summary-file ${sample_id}.hisat2.log \
         -S ${sample_id}.sam
 
