@@ -36,6 +36,8 @@ params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
+params.mock_hop_sample = "data/mock_data/hop_sample.fq"
+params.mock_verticillium_sample = "data/mock_data/verticillium_sample.fq"
 params.viruses_genome_fasta = "data/viruses_genome/3viroidi_2virusa.fa"
 
 
@@ -60,16 +62,29 @@ workflow {
                             .findAll { it =~ /^SRR/ }   // keep only SRA IDs
             tuple(row.sample_id, sra_list)
         }
-    
-    FETCH_SRA_PATHOGEN(read_ch_pathogen)
-    FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
-    TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
+ 
+ // MOCK DATA TESTING
+   trim_input_ch = Channel.from([
+    ['hop_sample', file(params.mock_hop_sample)]
+])
+    TRIM_GALORE(trim_input_ch)
+
+    trim_input_ch_pathogen = Channel.from([
+    ['verticillium_sample', file(params.mock_verticillium_sample)]
+])
+    TRIM_GALORE_PATHOGEN(trim_input_ch_pathogen)
+// END MOCK DATA TESTING
+ 
+ 
+    //SRA_PATHOGEN(read_ch_pathogen)
+    //FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
+    //TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
     merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
 
 
-    FETCH_SRA(read_ch)
-    FASTQC(FETCH_SRA.out)
-    TRIM_GALORE(FETCH_SRA.out)
+    // FETCH_SRA(read_ch)
+    // FASTQC(FETCH_SRA.out)
+    // TRIM_GALORE(FETCH_SRA.out)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
     flat_ch = merged_ch.combine(merged_ch_pathogen)
@@ -112,5 +127,5 @@ workflow {
         )
         .collect()
 
-    MULTIQC(params.report_id, qc_ch)
+    // MULTIQC(params.report_id, qc_ch)
 }
