@@ -13,6 +13,10 @@ process FETCH_SRA {
     for acc in ${accessions.join(' ')}; do
         prefetch \$acc
         fasterq-dump \$acc --split-files -O .
+
+        for f in \${acc}*.fastq; do
+            mv "\$f" "${sample_id}_\${f}"
+        done
     done
     """
 }
