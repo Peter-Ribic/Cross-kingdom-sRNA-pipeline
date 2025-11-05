@@ -21,6 +21,8 @@ include { PREDICT_HOP_TARGETS } from './modules/predict_hop_targets.nf'
 include { HISAT2_BUILD } from './modules/hisat2_build.nf'
 include { FILTER_SRNA_LENGTH } from './modules/filter_srna_length.nf'
 include { TARGETFINDER } from './modules/targetfinder.nf'
+include { BOWTIE_ALIGN_TO_VIRUSES } from './modules/bowtie_align_to_viruses.nf'
+include { BOWTIE_BUILD_VIRUSES } from './modules/bowtie_build_viruses.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -30,6 +32,7 @@ params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
+params.viruses_genome_fasta = "data/viruses_genome/3viroidi_2virusa.fa"
 
 
 workflow {
@@ -45,7 +48,7 @@ workflow {
         }
 
     read_ch_pathogen = Channel
-        .fromPath(params.sra_csv)
+        .fromPath(params.sra_csv_pathogen)
         .splitCsv(header: true)
         .map { row ->
             // Collect all non-empty SRA IDs from the row
@@ -62,19 +65,23 @@ workflow {
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
     FILTER_SRNA_LENGTH(merged_ch)
 
+    // CHECK FOR VIRUS INFECTIONS
+    viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
+    BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
+
     pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
     host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
     
 
-    align_pathogen_ch = BOWTIE_ALIGN_TO_PATHOGEN(FILTER_SRNA_LENGTH.out.filtered_reads, pathogen_index_ch)
-    BOWTIE_ALIGN_TO_HOST(align_pathogen_ch, host_index_ch)
+    BOWTIE_ALIGN_TO_PATHOGEN(FILTER_SRNA_LENGTH.out.filtered_reads, pathogen_index_ch)
+    BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
     LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
     
     filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
     // HISAT2 validation of filtered reads against pathogen genome - all reads should align
-    //pathogen_index = HISAT2_BUILD(file(params.pathogen_genome_fasta))
-    //HISAT2_ALIGN(filtered_reads, pathogen_index)
+    // virus_index = HISAT2_BUILD(file(params.viruses_genome_fasta))
+    // HISAT2_ALIGN(merged_ch, virus_index)
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
@@ -82,7 +89,10 @@ workflow {
         .mix(
             FASTQC.out.html,
             TRIM_GALORE.out.trimming_reports,
-            TRIM_GALORE.out.fastqc_reports
+            TRIM_GALORE.out.fastqc_reports,
+            BOWTIE_ALIGN_TO_VIRUSES.out.log,
+            BOWTIE_ALIGN_TO_PATHOGEN.out.log,
+            BOWTIE_ALIGN_TO_HOST.out.log
             //HISAT2_ALIGN.out.log
         )
         .collect()

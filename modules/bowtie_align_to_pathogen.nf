@@ -8,6 +8,7 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
 
     output:
     tuple val(sample_id), path(reads), path("${sample_id}_pathogen_0mm.sam"), path("${sample_id}_pathogen_ids.txt"), emit: results
+    path("${sample_id}_pathogen_0mm.log"), emit: log
 
     script:
     """
@@ -18,7 +19,7 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
         -p ${task.cpus} \
         -x pathogen_index \
         -U ${reads} \
-        -S ${sample_id}_pathogen_0mm.sam
+        -S ${sample_id}_pathogen_0mm.sam 2> ${sample_id}_pathogen_0mm.log   
     
 
     grep -v "^@" ${sample_id}_pathogen_0mm.sam | cut -f1 | sort | uniq > ${sample_id}_pathogen_ids.txt

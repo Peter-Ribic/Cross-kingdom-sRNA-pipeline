@@ -10,6 +10,7 @@ process BOWTIE_ALIGN_TO_HOST {
     
     output:
     tuple val(sample_id), path(reads), path("${sample_id}_host_0mm.sam"), path(pathogen_ids), emit: list_input
+    path("${sample_id}_host_0mm.log"), emit: log
 
     script:
     """
@@ -20,6 +21,6 @@ process BOWTIE_ALIGN_TO_HOST {
         -p ${task.cpus} \
         -x host_index \
         -U ${reads} \
-        -S ${sample_id}_host_0mm.sam
+        -S ${sample_id}_host_0mm.sam 2> ${sample_id}_host_0mm.log   
     """
 }
