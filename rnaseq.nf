@@ -72,9 +72,9 @@ workflow {
     TRIM_GALORE(FETCH_SRA.out)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
-    flat_ch = merged_ch.combine(merged_ch_pathogen).map { host, pathogen ->
-    tuple(host[0], host[1], pathogen[1])
-    }
+    flat_ch = merged_ch.combine(merged_ch_pathogen)
+
+    //flat_ch.view()
     filtered_ch = KEEP_ONLY_PATHOGEN_READS(flat_ch)
     FILTER_SRNA_LENGTH(filtered_ch)
 
