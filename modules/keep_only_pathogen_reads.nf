@@ -10,25 +10,16 @@ process KEEP_ONLY_PATHOGEN_READS {
 
     output:
     tuple val(sample_id), path("${sample_id}_filtered.fq.gz"), emit: filtered_reads
+    path("${sample_id}_pathogen_filter.tsv"), emit: log
 
-    // """
-    // # Extract unique pathogen sequences (just the sequence strings)
-    // seqkit seq -s $pathogen_reads | sort | uniq > pathogen_unique.txt
-
-    // # Keep only reads from hop sample that exactly match pathogen sequences
-    // seqkit grep -s -f pathogen_unique.txt --threads 30 -I $reads | gzip > ${sample_id}_filtered.fq.gz
-    // """
     script:
     """
-    echo "=== DEBUG: Extracting pathogen sequences ==="
+    # Extract unique pathogen sequences
     zcat $pathogen_reads | bioawk 'NR % 4 == 2 {print toupper(\$0)}' | tr -d '\\r' | sort | uniq > pathogen_unique.txt
     pathogen_count=\$(wc -l < pathogen_unique.txt)
-    echo "Number of unique pathogen sequences: \$pathogen_count"
-    echo "Sample pathogen sequences (first 5):"
-    head -n 5 pathogen_unique.txt
 
-    echo "=== DEBUG: Filtering host reads ==="
-    zcat $reads | bioawk '
+    # Filter host reads based on pathogen sequences
+    zcat $reads | bioawk -v sid="${sample_id}" '
         BEGIN {
             host_count = 0
             matched_count = 0
@@ -37,27 +28,28 @@ process KEEP_ONLY_PATHOGEN_READS {
             }
             pathogen_count = length(keep)
         }
-        NR % 4 == 1 { name = substr(\$0, 2) }
+        NR % 4 == 1 { header = \$0; name = substr(\$0, 2) }
         NR % 4 == 2 { seq = toupper(\$0); host_count++ }
+        NR % 4 == 3 { plus = \$0 }
         NR % 4 == 0 {
             qual = \$0
             if (seq in keep) {
-                if (matched_count < 20) {
-                    print "@"name"\\n"seq"\\n+\\n"qual
-                }
                 matched_count++
-                print "@"name"\\n"seq"\\n+\\n"qual > "'${sample_id}_filtered.fq.gz.tmp'"
+                print header"\\n"seq"\\n"plus"\\n"qual > "'${sample_id}_filtered.fq'"
             }
         }
-       END {
-        pct = (host_count > 0) ? matched_count / host_count * 100 : 0
-        printf "Matched %d host reads against %d pathogen sequences, %d reads matched (%.2f%%)\\n", host_count, pathogen_count, matched_count, pct > "/dev/stderr"
-    }   
+        END {
+            pct = (host_count > 0) ? matched_count / host_count * 100 : 0
+
+            # MultiQC-friendly log (general_stats)
+            print "# plot_type: general_stats" > "'${sample_id}_pathogen_filter.tsv'"
+            print "sample\\ttotal_reads\\tpathogen_unique\\tmatched_reads\\tpercent_matched" >> "'${sample_id}_pathogen_filter.tsv'"
+            printf "%s\\t%d\\t%d\\t%d\\t%.2f\\n", sid, host_count, pathogen_count, matched_count, pct >> "'${sample_id}_pathogen_filter.tsv'"
+        }
     '
 
-    gzip -c '${sample_id}_filtered.fq.gz.tmp' > ${sample_id}_filtered.fq.gz
-    rm '${sample_id}_filtered.fq.gz.tmp'
-
-    echo "=== DEBUG: Finished filtering ==="
+    # Compress filtered reads
+    gzip -c '${sample_id}_filtered.fq' > ${sample_id}_filtered.fq.gz
+    rm '${sample_id}_filtered.fq'
     """
 }

@@ -64,34 +64,33 @@ workflow {
         }
  
  // MOCK DATA TESTING
-   trim_input_ch = Channel.from([
-    ['hop_sample', file(params.mock_hop_sample)]
-])
-    TRIM_GALORE(trim_input_ch)
+//    trim_input_ch = Channel.from([
+//     ['hop_sample', file(params.mock_hop_sample)]
+// ])
+//     TRIM_GALORE(trim_input_ch)
 
-    trim_input_ch_pathogen = Channel.from([
-    ['verticillium_sample', file(params.mock_verticillium_sample)]
-])
-    TRIM_GALORE_PATHOGEN(trim_input_ch_pathogen)
+//     trim_input_ch_pathogen = Channel.from([
+//     ['verticillium_sample', file(params.mock_verticillium_sample)]
+// ])
+//     TRIM_GALORE_PATHOGEN(trim_input_ch_pathogen)
 // END MOCK DATA TESTING
  
  
-    //SRA_PATHOGEN(read_ch_pathogen)
-    //FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
-    //TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
+    FETCH_SRA_PATHOGEN(read_ch_pathogen)
+    FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
+    TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
     merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
 
 
-    // FETCH_SRA(read_ch)
-    // FASTQC(FETCH_SRA.out)
-    // TRIM_GALORE(FETCH_SRA.out)
+    FETCH_SRA(read_ch)
+    FASTQC(FETCH_SRA.out)
+    TRIM_GALORE(FETCH_SRA.out)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
     flat_ch = merged_ch.combine(merged_ch_pathogen)
 
-    //flat_ch.view()
-    filtered_ch = KEEP_ONLY_PATHOGEN_READS(flat_ch)
-    FILTER_SRNA_LENGTH(filtered_ch)
+    KEEP_ONLY_PATHOGEN_READS(flat_ch)
+    FILTER_SRNA_LENGTH(KEEP_ONLY_PATHOGEN_READS.out.filtered_reads)
 
     // CHECK FOR VIRUS INFECTIONS
     viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
@@ -127,5 +126,5 @@ workflow {
         )
         .collect()
 
-    // MULTIQC(params.report_id, qc_ch)
+    MULTIQC(params.report_id, qc_ch)
 }
