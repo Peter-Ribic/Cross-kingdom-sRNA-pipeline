@@ -79,9 +79,6 @@ workflow {
     
     filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
-    // HISAT2 validation of filtered reads against pathogen genome - all reads should align
-    // virus_index = HISAT2_BUILD(file(params.viruses_genome_fasta))
-    // HISAT2_ALIGN(merged_ch, virus_index)
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
@@ -93,7 +90,6 @@ workflow {
             BOWTIE_ALIGN_TO_VIRUSES.out.log,
             BOWTIE_ALIGN_TO_PATHOGEN.out.log,
             BOWTIE_ALIGN_TO_HOST.out.log
-            //HISAT2_ALIGN.out.log
         )
         .collect()
 
