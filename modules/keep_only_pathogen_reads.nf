@@ -1,0 +1,55 @@
+process KEEP_ONLY_PATHOGEN_READS {
+    tag "$sample_id"
+    memory '200 GB'
+    cpus 20
+    container "quay.io/biocontainers/bioawk:1.0--h577a1d6_13"
+    publishDir "results/${sample_id}/keep_pathogen_reads_only", mode: 'copy'
+
+    input:
+    tuple val(sample_id), path(reads), val(pathogen_sample_id), path(pathogen_reads)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_filtered.fq.gz"), emit: filtered_reads
+    path("${sample_id}_pathogen_filter.tsv"), emit: log
+
+    script:
+    """
+    # Extract unique pathogen sequences
+    zcat $pathogen_reads | bioawk 'NR % 4 == 2 {print toupper(\$0)}' | tr -d '\\r' | sort | uniq > pathogen_unique.txt
+    pathogen_count=\$(wc -l < pathogen_unique.txt)
+
+    # Filter host reads based on pathogen sequences
+    zcat $reads | bioawk -v sid="${sample_id}" '
+        BEGIN {
+            host_count = 0
+            matched_count = 0
+            while ((getline line < "pathogen_unique.txt") > 0) {
+                keep[line] = 1
+            }
+            pathogen_count = length(keep)
+        }
+        NR % 4 == 1 { header = \$0; name = substr(\$0, 2) }
+        NR % 4 == 2 { seq = toupper(\$0); host_count++ }
+        NR % 4 == 3 { plus = \$0 }
+        NR % 4 == 0 {
+            qual = \$0
+            if (seq in keep) {
+                matched_count++
+                print header"\\n"seq"\\n"plus"\\n"qual > "'${sample_id}_filtered.fq'"
+            }
+        }
+        END {
+            pct = (host_count > 0) ? matched_count / host_count * 100 : 0
+
+            # MultiQC-friendly log (general_stats)
+            print "# plot_type: general_stats" > "'${sample_id}_pathogen_filter.tsv'"
+            print "sample\\ttotal_reads\\tpathogen_unique\\tmatched_reads\\tpercent_matched" >> "'${sample_id}_pathogen_filter.tsv'"
+            printf "%s\\t%d\\t%d\\t%d\\t%.2f\\n", sid, host_count, pathogen_count, matched_count, pct >> "'${sample_id}_pathogen_filter.tsv'"
+        }
+    '
+
+    # Compress filtered reads
+    gzip -c '${sample_id}_filtered.fq' > ${sample_id}_filtered.fq.gz
+    rm '${sample_id}_filtered.fq'
+    """
+}
