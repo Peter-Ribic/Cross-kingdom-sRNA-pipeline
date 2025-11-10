@@ -29,6 +29,9 @@ include { BOWTIE_ALIGN_TO_VIRUSES } from './modules/bowtie_align_to_viruses.nf'
 include { BOWTIE_BUILD_VIRUSES } from './modules/bowtie_build_viruses.nf'
 include { COMPARE_SRNA_LIBRARIES_SIMILAR } from './modules/compare_sRNA_libraries.nf'
 include { SHARED_READS } from './modules/shared_reads.nf'
+include { CHECK_ALIGNMENT_DISTRIBUTION } from './modules/check_alignment_distribution.nf'
+include { CONCAT_ALIGNMENT_DISTRIBUTION } from './modules/concat_alignment_distribution.nf'
+include { KEEP_TREATED_ONLY} from './modules/keep_treated_only.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -91,6 +94,13 @@ workflow {
     merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
+    // CHECK FOR VIRUS INFECTIONS
+        viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
+        BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
+        CHECK_ALIGNMENT_DISTRIBUTION(BOWTIE_ALIGN_TO_VIRUSES.out.results)
+        CONCAT_ALIGNMENT_DISTRIBUTION(CHECK_ALIGNMENT_DISTRIBUTION.out.percent_row.collect())
+    //
+
     flat_ch = merged_ch.combine(merged_ch_pathogen)
 
     KEEP_ONLY_PATHOGEN_READS(flat_ch)
@@ -116,11 +126,25 @@ workflow {
         SHARED_READS(all_combinations_ch)
     //
 
+    // FILTERING BASED ON TREATED MINUS CONTROL READS
+        filtered_ch = FILTER_SRNA_LENGTH.out.filtered_reads
+        keyed_ch = filtered_ch
+            .map { sample_id, reads ->
+                // remove _treated or _control suffix to get base name
+                def base = sample_id.replaceAll(/_(treated|control)$/, '')
+                tuple(base, sample_id, reads)
+            }
+            .groupTuple()
 
-
-    // CHECK FOR VIRUS INFECTIONS
-    viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
-    BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
+        paired_ch = keyed_ch
+            .map { base, sample_ids, reads ->
+                def treatedIndex = sample_ids.findIndexOf { it.endsWith('_treated') }
+                def controlIndex = sample_ids.findIndexOf { it.endsWith('_control') }
+                tuple(base, reads[treatedIndex], reads[controlIndex])
+            }
+        paired_ch.view()
+        KEEP_TREATED_ONLY(paired_ch)
+    //
 
     // FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
     // pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
@@ -130,23 +154,24 @@ workflow {
     //LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
     // filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
-    SHORTSTACK(FILTER_SRNA_LENGTH.out.filtered_reads, file(params.pathogen_genome_fasta))
+    SHORTSTACK(KEEP_TREATED_ONLY.out.filtered_reads, file(params.pathogen_genome_fasta))
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
-    // qc_ch = FASTQC.out.zip
-    //     .mix(
-    //         FASTQC.out.html,
-    //         FASTQC_PATHOGEN.out.html,
-    //         TRIM_GALORE.out.trimming_reports,
-    //         TRIM_GALORE.out.fastqc_reports,
-    //         TRIM_GALORE_PATHOGEN.out.trimming_reports,
-    //         TRIM_GALORE_PATHOGEN.out.fastqc_reports,
-    //         BOWTIE_ALIGN_TO_VIRUSES.out.log,
-    //         KEEP_ONLY_PATHOGEN_READS.out.log
-    //         //BOWTIE_ALIGN_TO_PATHOGEN.out.log,
-    //         //BOWTIE_ALIGN_TO_HOST.out.log
-    //     )
-    //     .collect()
+    qc_ch = FASTQC.out.zip
+        .mix(
+            FASTQC.out.html,
+            FASTQC_PATHOGEN.out.html,
+            TRIM_GALORE.out.trimming_reports,
+            TRIM_GALORE.out.fastqc_reports,
+            TRIM_GALORE_PATHOGEN.out.trimming_reports,
+            TRIM_GALORE_PATHOGEN.out.fastqc_reports,
+            BOWTIE_ALIGN_TO_VIRUSES.out.log,
+            KEEP_ONLY_PATHOGEN_READS.out.log,
+            KEEP_TREATED_ONLY.out.log
+            //BOWTIE_ALIGN_TO_PATHOGEN.out.log,
+            //BOWTIE_ALIGN_TO_HOST.out.log
+        )
+        .collect()
 
-    // MULTIQC(params.report_id, qc_ch)
+    MULTIQC(params.report_id, qc_ch)
 }

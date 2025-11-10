@@ -40,8 +40,7 @@ process KEEP_ONLY_PATHOGEN_READS {
         }
         END {
             pct = (host_count > 0) ? matched_count / host_count * 100 : 0
-
-            # MultiQC-friendly log (general_stats)
+            
             print "# plot_type: general_stats" > "'${sample_id}_pathogen_filter.tsv'"
             print "sample\\ttotal_reads\\tpathogen_unique\\tmatched_reads\\tpercent_matched" >> "'${sample_id}_pathogen_filter.tsv'"
             printf "%s\\t%d\\t%d\\t%d\\t%.2f\\n", sid, host_count, pathogen_count, matched_count, pct >> "'${sample_id}_pathogen_filter.tsv'"
