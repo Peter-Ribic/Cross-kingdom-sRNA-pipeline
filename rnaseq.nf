@@ -27,6 +27,8 @@ include { HISAT2_BUILD } from './modules/hisat2_build.nf'
 include { TARGETFINDER } from './modules/targetfinder.nf'
 include { BOWTIE_ALIGN_TO_VIRUSES } from './modules/bowtie_align_to_viruses.nf'
 include { BOWTIE_BUILD_VIRUSES } from './modules/bowtie_build_viruses.nf'
+include { COMPARE_SRNA_LIBRARIES_SIMILAR } from './modules/compare_sRNA_libraries.nf'
+include { SHARED_READS } from './modules/shared_reads.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -37,6 +39,7 @@ params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
 params.mock_hop_sample = "data/mock_data/hop_sample.fq"
+params.mock_hop_sample2 = "data/mock_data/hop_sample2.fq"
 params.mock_verticillium_sample = "data/mock_data/verticillium_sample.fq"
 params.viruses_genome_fasta = "data/viruses_genome/3viroidi_2virusa.fa"
 
@@ -65,7 +68,8 @@ workflow {
  
  // MOCK DATA TESTING
 //    trim_input_ch = Channel.from([
-//     ['hop_sample', file(params.mock_hop_sample)]
+//     ['hop_sample', file(params.mock_hop_sample)],
+//     ['hop_sample2', file(params.mock_hop_sample2)]
 // ])
 //     TRIM_GALORE(trim_input_ch)
 
@@ -79,52 +83,70 @@ workflow {
     FETCH_SRA_PATHOGEN(read_ch_pathogen)
     FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
     TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
-    merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
-
-
     FETCH_SRA(read_ch)
     FASTQC(FETCH_SRA.out)
     TRIM_GALORE(FETCH_SRA.out)
+
+
+    merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
     flat_ch = merged_ch.combine(merged_ch_pathogen)
 
     KEEP_ONLY_PATHOGEN_READS(flat_ch)
+
     FILTER_SRNA_LENGTH(KEEP_ONLY_PATHOGEN_READS.out.filtered_reads)
+
+    // COMPARE SRNA LIBRARIES FOR SIMILARITY
+        pathogen_only_output_ch = FILTER_SRNA_LENGTH.out.filtered_reads
+        all_combinations_ch = pathogen_only_output_ch
+        .combine(pathogen_only_output_ch)
+        .map { pair ->
+            // 'pair' is a LinkedList of the two tuples: [ [sample1_id, file1], [sample2_id, file2] ]
+            def sample1 = pair[0]
+            def sample2 = pair[1]
+            def sample3 = pair[2]
+            def sample4 = pair[3]
+            tuple(sample1, sample2, sample3, sample4)
+        }
+        .filter { s1_id, s1_file, s2_id, s2_file ->
+            s1_id < s2_id  // avoid self-comparison & duplicates
+        }
+        COMPARE_SRNA_LIBRARIES_SIMILAR(all_combinations_ch)
+        SHARED_READS(all_combinations_ch)
+    //
+
+
 
     // CHECK FOR VIRUS INFECTIONS
     viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
     BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
 
+    // FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
     // pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
     // host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
-    
-
     //BOWTIE_ALIGN_TO_PATHOGEN(FILTER_SRNA_LENGTH.out.filtered_reads, pathogen_index_ch)
     //BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
     //LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
-    
     // filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
-    // HISAT2 validation of filtered reads against pathogen genome - all reads should align
-    //pathogen_index = HISAT2_BUILD(file(params.pathogen_genome_fasta))
-    //HISAT2_ALIGN(filtered_reads, pathogen_index)
     SHORTSTACK(FILTER_SRNA_LENGTH.out.filtered_reads, file(params.pathogen_genome_fasta))
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
-    qc_ch = FASTQC.out.zip
-        .mix(
-            FASTQC.out.html,
-            FASTQC_PATHOGEN.out.html,
-            TRIM_GALORE.out.trimming_reports,
-            TRIM_GALORE.out.fastqc_reports,
-            TRIM_GALORE_PATHOGEN.out.trimming_reports,
-            TRIM_GALORE_PATHOGEN.out.fastqc_reports
-            BOWTIE_ALIGN_TO_VIRUSES.out.log,
-            BOWTIE_ALIGN_TO_PATHOGEN.out.log,
-            BOWTIE_ALIGN_TO_HOST.out.log
-        )
-        .collect()
+    // qc_ch = FASTQC.out.zip
+    //     .mix(
+    //         FASTQC.out.html,
+    //         FASTQC_PATHOGEN.out.html,
+    //         TRIM_GALORE.out.trimming_reports,
+    //         TRIM_GALORE.out.fastqc_reports,
+    //         TRIM_GALORE_PATHOGEN.out.trimming_reports,
+    //         TRIM_GALORE_PATHOGEN.out.fastqc_reports,
+    //         BOWTIE_ALIGN_TO_VIRUSES.out.log,
+    //         KEEP_ONLY_PATHOGEN_READS.out.log
+    //         //BOWTIE_ALIGN_TO_PATHOGEN.out.log,
+    //         //BOWTIE_ALIGN_TO_HOST.out.log
+    //     )
+    //     .collect()
 
-    MULTIQC(params.report_id, qc_ch)
+    // MULTIQC(params.report_id, qc_ch)
 }
