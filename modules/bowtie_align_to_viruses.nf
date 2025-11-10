@@ -1,6 +1,5 @@
 process BOWTIE_ALIGN_TO_VIRUSES {
     tag "$sample_id"
-    memory '100 GB'
     container "biocontainers/bowtie2:v2.4.1_cv1"
     publishDir "results/${sample_id}/viruses_alignments", mode: 'symlink'
 
