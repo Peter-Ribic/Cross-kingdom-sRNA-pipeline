@@ -32,6 +32,7 @@ include { SHARED_READS } from './modules/shared_reads.nf'
 include { CHECK_ALIGNMENT_DISTRIBUTION } from './modules/check_alignment_distribution.nf'
 include { CONCAT_ALIGNMENT_DISTRIBUTION } from './modules/concat_alignment_distribution.nf'
 include { KEEP_TREATED_ONLY} from './modules/keep_treated_only.nf'
+include { MATCH_WITH_CANDIDATE_SRNAs } from './modules/match_candidate_srnas.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -41,10 +42,15 @@ params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
-params.mock_hop_sample = "data/mock_data/hop_sample.fq"
-params.mock_hop_sample2 = "data/mock_data/hop_sample2.fq"
+
+params.mock_hop_sample_control = "data/mock_data/hop_sample_control.fq"
+params.mock_hop_sample_treated = "data/mock_data/hop_sample_treated.fq"
 params.mock_verticillium_sample = "data/mock_data/verticillium_sample.fq"
+params.mock_candidate_srnas_fasta = "data/mock_data/candidate_srnas.fa"
+
 params.viruses_genome_fasta = "data/viruses_genome/3viroidi_2virusa.fa"
+params.candidate_srnas_fasta = "data/candidate_srnas/candidate_srnas.fa"
+
 
 
 workflow {
@@ -71,8 +77,8 @@ workflow {
  
  // MOCK DATA TESTING
 //    trim_input_ch = Channel.from([
-//     ['hop_sample', file(params.mock_hop_sample)],
-//     ['hop_sample2', file(params.mock_hop_sample2)]
+//     ['hop_sample_control', file(params.mock_hop_sample_control)],
+//     ['hop_sample_treated', file(params.mock_hop_sample_treated)]
 // ])
 //     TRIM_GALORE(trim_input_ch)
 
@@ -145,6 +151,8 @@ workflow {
         paired_ch.view()
         KEEP_TREATED_ONLY(paired_ch)
     //
+
+    MATCH_WITH_CANDIDATE_SRNAs(KEEP_TREATED_ONLY.out.filtered_reads, file(params.candidate_srnas_fasta), 1)
 
     // FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
     // pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
