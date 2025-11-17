@@ -33,6 +33,8 @@ include { CHECK_ALIGNMENT_DISTRIBUTION } from './modules/check_alignment_distrib
 include { CONCAT_ALIGNMENT_DISTRIBUTION } from './modules/concat_alignment_distribution.nf'
 include { KEEP_TREATED_ONLY} from './modules/keep_treated_only.nf'
 include { MATCH_WITH_CANDIDATE_SRNAs } from './modules/match_candidate_srnas.nf'
+include { BOWTIE_BUILD_CANDIDATE_SRNAS } from './modules/bowtie_build_candidate_srnas.nf'
+include { BOWTIE_ALIGN_TO_CANDIDATE_SRNAS } from './modules/bowtie_align_to_candidate_srnas.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -152,7 +154,11 @@ workflow {
         KEEP_TREATED_ONLY(paired_ch)
     //
 
-    MATCH_WITH_CANDIDATE_SRNAs(KEEP_TREATED_ONLY.out.filtered_reads, file(params.candidate_srnas_fasta), 1)
+    // MATCHING WITH CANDIDATE sRNAs
+        candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
+        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(KEEP_TREATED_ONLY.out.filtered_reads, candidate_srna_index_ch)
+    //
+
 
     // FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
     // pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))

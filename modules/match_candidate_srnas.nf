@@ -5,7 +5,6 @@ process MATCH_WITH_CANDIDATE_SRNAs {
     input:
     tuple val(sample_id), path(sample_fq)
     path(candidate_srna_fasta)
-    val(percent_id)
 
     output:
     path "${sample_id}_candidate_reads_stats.txt"
