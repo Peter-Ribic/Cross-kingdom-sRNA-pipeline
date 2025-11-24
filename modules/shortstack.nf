@@ -4,7 +4,7 @@ process SHORTSTACK {
 
     container "quay.io/biocontainers/shortstack:4.1.2--hdfd78af_0"
 
-    publishDir "results/${sample_id}/shortstack", mode: 'copy'
+    publishDir "results/shortstack/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(trimmed_reads)
@@ -20,7 +20,7 @@ process SHORTSTACK {
         --genomefile ${genome_fasta} \
         --outdir ShortStack_out \
         --threads 10 \
-        --mincov 4000 \
+        --mincov 1000 \
         --dicermin 18
     """
 }

@@ -35,11 +35,13 @@ include { KEEP_TREATED_ONLY} from './modules/keep_treated_only.nf'
 include { MATCH_WITH_CANDIDATE_SRNAs } from './modules/match_candidate_srnas.nf'
 include { BOWTIE_BUILD_CANDIDATE_SRNAS } from './modules/bowtie_build_candidate_srnas.nf'
 include { BOWTIE_ALIGN_TO_CANDIDATE_SRNAS } from './modules/bowtie_align_to_candidate_srnas.nf'
+include {CHECK_ANNOTATION } from './modules/check_annotation.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
 params.host_genome_fasta = "data/hops_genome/hops_genome.fa"
 params.pathogen_genome_fasta = "data/verticilium_genome/T2/VnonalfalfaeT2.fasta"
+params.pathogen_genome_gff = "data/verticilium_genome/T2/Verticillium_nonalfalfae_T2.gff3"
 params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
@@ -169,6 +171,10 @@ workflow {
     // filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
     SHORTSTACK(KEEP_TREATED_ONLY.out.filtered_reads, file(params.pathogen_genome_fasta))
+    // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
+    CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
+
+    
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip
