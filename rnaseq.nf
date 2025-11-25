@@ -36,6 +36,9 @@ include { MATCH_WITH_CANDIDATE_SRNAs } from './modules/match_candidate_srnas.nf'
 include { BOWTIE_BUILD_CANDIDATE_SRNAS } from './modules/bowtie_build_candidate_srnas.nf'
 include { BOWTIE_ALIGN_TO_CANDIDATE_SRNAS } from './modules/bowtie_align_to_candidate_srnas.nf'
 include {CHECK_ANNOTATION } from './modules/check_annotation.nf'
+include {BOWTIE_BUILD } from './modules/bowtie_build.nf'
+include {BOWTIE_ALIGN } from './modules/bowtie_align.nf'
+include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -173,10 +176,14 @@ workflow {
     SHORTSTACK(KEEP_TREATED_ONLY.out.filtered_reads, file(params.pathogen_genome_fasta))
     // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
+    // map filtered reads to host transcriptome
+    BOWTIE_BUILD(file(params.host_transcriptome_fasta), 'host_transcriptome_index')
+    BOWTIE_ALIGN(KEEP_TREATED_ONLY.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
+    FASTQ_TO_FASTA(KEEP_TREATED_ONLY.out.filtered_reads)
+    TARGETFINDER(FASTQ_TO_FASTA.out.fasta, file(params.host_transcriptome_fasta))
     
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
-    //TARGETFINDER(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip
         .mix(
             FASTQC.out.html,

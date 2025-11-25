@@ -1,7 +1,7 @@
 process CHECK_ALIGNMENT_DISTRIBUTION {
     tag "$sample_id"
     container "quay.io/biocontainers/samtools:1.22--h96c455f_0"
-    publishDir "results/${sample_id}/virus_alignment_dist", mode: 'symlink'
+    publishDir "results/virus_alignment_dist/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(alignment_table), path(alignment_raw)
