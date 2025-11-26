@@ -1,45 +1,24 @@
 process TARGETFINDER {
-
+    cpus 3
+    memory '8 GB'
     tag "$sample_id"
     container "quay.io/biocontainers/targetfinder:1.7--hdfd78af_4"
-
-    publishDir "results/targetfinder/${sample_id}", mode: 'copy'
     
     input:
-    tuple val(sample_id), path(reads)
+    tuple val(sample_id), val(fasta_id), val(sequence)
     path host_transcriptome_fasta
     
     output:
-    path("*.log"), emit: log
+    tuple val(sample_id), path("*.log"), emit: log
+
     
     script:
     """
-    # Parse FASTA file and extract sequence IDs
-    grep '^>' $reads | sed 's/^>//' | while read fasta_id; do
-        # Extract the sequence for this ID
-        # Use awk to get the sequence corresponding to this header
-        sequence=\$(awk -v id="\$fasta_id" '
-            BEGIN { found=0 }
-            /^>/ { 
-                if (\$0 ~ ">" id) { found=1; next } 
-                else { found=0 }
-            }
-            found && !/^>/ { print; exit }
-        ' $reads)
-        
-        # Run targetfinder for each sequence
-        targetfinder.pl \\
-            -s "\$sequence" \\
-            -t ${task.cpus} \\
-            -d ${host_transcriptome_fasta} \\
-            -q "\$fasta_id" \\
-            -c 0.5 >> "target_results.log"
-        echo "targetfinder.pl \\
-            -s "\$sequence" \\
-            -t ${task.cpus} \\
-            -d ${host_transcriptome_fasta} \\
-            -q "\$fasta_id" \\
-            -c 0.5" >> "target_results.log"
-    done
+    targetfinder.pl \
+        -s ${sequence} \
+        -q ${fasta_id} \
+        -t 3 \
+        -d ${host_transcriptome_fasta} \
+        -c 0.5 > ${fasta_id}.log
     """
 }

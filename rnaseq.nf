@@ -39,6 +39,7 @@ include {CHECK_ANNOTATION } from './modules/check_annotation.nf'
 include {BOWTIE_BUILD } from './modules/bowtie_build.nf'
 include {BOWTIE_ALIGN } from './modules/bowtie_align.nf'
 include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
+include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -49,6 +50,7 @@ params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
+params.annotated_host_mrnas_fasta = "data/annotated_hop_mrnas/sequence.fasta"
 
 params.mock_hop_sample_control = "data/mock_data/hop_sample_control.fq"
 params.mock_hop_sample_treated = "data/mock_data/hop_sample_treated.fq"
@@ -180,8 +182,27 @@ workflow {
     BOWTIE_BUILD(file(params.host_transcriptome_fasta), 'host_transcriptome_index')
     BOWTIE_ALIGN(KEEP_TREATED_ONLY.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
-    FASTQ_TO_FASTA(KEEP_TREATED_ONLY.out.filtered_reads)
-    TARGETFINDER(FASTQ_TO_FASTA.out.fasta, file(params.host_transcriptome_fasta))
+     // Split the multi-FASTA file into individual sequences
+    fasta_output = FASTQ_TO_FASTA(KEEP_TREATED_ONLY.out.filtered_reads)
+
+    split_fasta_ch = fasta_output
+    .flatMap { sample_id, fasta_file ->
+        // Use splitFasta on the file and map each record
+        file(fasta_file)
+            .splitFasta(record: [id: true, seqString: true])
+            .collect { record ->
+                tuple(sample_id, record.id, record.seqString)
+            }
+    }
+    TARGETFINDER(split_fasta_ch, file(params.annotated_host_mrnas_fasta))
+    // Collect TargetFinder results by sample_id
+    targetfinder_results_collected = TARGETFINDER.out.log
+        .groupTuple(by: [0])  // Group by the first element of tuple (sample_id)
+        .map { sample_id, log_files ->
+            tuple(sample_id, log_files)
+        }
+    targetfinder_results_collected.view()
+    CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
     
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip
