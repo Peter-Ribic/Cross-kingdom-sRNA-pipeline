@@ -143,27 +143,27 @@ workflow {
     //
 
     // FILTERING BASED ON TREATED MINUS CONTROL READS
-        filtered_ch = FILTER_SRNA_LENGTH.out.filtered_reads
-        keyed_ch = filtered_ch
-            .map { sample_id, reads ->
-                // remove _treated or _control suffix to get base name
-                def base = sample_id.replaceAll(/_(treated|control)$/, '')
-                tuple(base, sample_id, reads)
-            }
-            .groupTuple()
+        // filtered_ch = FILTER_SRNA_LENGTH.out.filtered_reads
+        // keyed_ch = filtered_ch
+        //     .map { sample_id, reads ->
+        //         // remove _treated or _control suffix to get base name
+        //         def base = sample_id.replaceAll(/_(treated|control)$/, '')
+        //         tuple(base, sample_id, reads)
+        //     }
+        //     .groupTuple()
 
-        paired_ch = keyed_ch
-            .map { base, sample_ids, reads ->
-                def treatedIndex = sample_ids.findIndexOf { it.endsWith('_treated') }
-                def controlIndex = sample_ids.findIndexOf { it.endsWith('_control') }
-                tuple(base, reads[treatedIndex], reads[controlIndex])
-            }
-        KEEP_TREATED_ONLY(paired_ch)
+        // paired_ch = keyed_ch
+        //     .map { base, sample_ids, reads ->
+        //         def treatedIndex = sample_ids.findIndexOf { it.endsWith('_treated') }
+        //         def controlIndex = sample_ids.findIndexOf { it.endsWith('_control') }
+        //         tuple(base, reads[treatedIndex], reads[controlIndex])
+        //     }
+        // KEEP_TREATED_ONLY(paired_ch)
     //
 
     // MATCHING WITH CANDIDATE sRNAs
         candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
-        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(KEEP_TREATED_ONLY.out.filtered_reads, candidate_srna_index_ch)
+        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(FILTER_SRNA_LENGTH.out.filtered_reads, candidate_srna_index_ch)
     //
 
 
@@ -175,15 +175,15 @@ workflow {
     //LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
     // filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
 
-    SHORTSTACK(KEEP_TREATED_ONLY.out.filtered_reads, file(params.pathogen_genome_fasta))
+    SHORTSTACK(FILTER_SRNA_LENGTH.out.filtered_reads, file(params.pathogen_genome_fasta))
     // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
     // map filtered reads to host transcriptome
     BOWTIE_BUILD(file(params.annotated_host_mrnas_fasta), 'host_transcriptome_index')
-    BOWTIE_ALIGN(KEEP_TREATED_ONLY.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
+    BOWTIE_ALIGN(FILTER_SRNA_LENGTH.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
      // Split the multi-FASTA file into individual sequences
-    fasta_output = FASTQ_TO_FASTA(KEEP_TREATED_ONLY.out.filtered_reads)
+    fasta_output = FASTQ_TO_FASTA(FILTER_SRNA_LENGTH.out.filtered_reads)
 
     split_fasta_ch = fasta_output
     .flatMap { sample_id, fasta_file ->
@@ -215,8 +215,7 @@ workflow {
             TRIM_GALORE_PATHOGEN.out.trimming_reports,
             TRIM_GALORE_PATHOGEN.out.fastqc_reports,
             BOWTIE_ALIGN_TO_VIRUSES.out.log,
-            KEEP_ONLY_PATHOGEN_READS.out.log,
-            KEEP_TREATED_ONLY.out.log
+            KEEP_ONLY_PATHOGEN_READS.out.log
             //BOWTIE_ALIGN_TO_PATHOGEN.out.log,
             //BOWTIE_ALIGN_TO_HOST.out.log
         )
