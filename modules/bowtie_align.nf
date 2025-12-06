@@ -16,7 +16,7 @@ process BOWTIE_ALIGN {
     """
     bowtie2 \
         --end-to-end \
-        --score-min L,0,-0.3 \
+        --score-min L,0,0 \
         --no-unal \
         -p ${task.cpus} \
         -x ${index_prefix} \

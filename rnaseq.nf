@@ -40,6 +40,7 @@ include {BOWTIE_BUILD } from './modules/bowtie_build.nf'
 include {BOWTIE_ALIGN } from './modules/bowtie_align.nf'
 include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
+include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -157,7 +158,6 @@ workflow {
                 def controlIndex = sample_ids.findIndexOf { it.endsWith('_control') }
                 tuple(base, reads[treatedIndex], reads[controlIndex])
             }
-        paired_ch.view()
         KEEP_TREATED_ONLY(paired_ch)
     //
 
@@ -179,7 +179,7 @@ workflow {
     // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
     // map filtered reads to host transcriptome
-    BOWTIE_BUILD(file(params.host_transcriptome_fasta), 'host_transcriptome_index')
+    BOWTIE_BUILD(file(params.annotated_host_mrnas_fasta), 'host_transcriptome_index')
     BOWTIE_ALIGN(KEEP_TREATED_ONLY.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
      // Split the multi-FASTA file into individual sequences
@@ -201,8 +201,9 @@ workflow {
         .map { sample_id, log_files ->
             tuple(sample_id, log_files)
         }
-    targetfinder_results_collected.view()
     CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
+    // Annotate predicted targets
+    ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results)
     
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip
