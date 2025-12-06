@@ -1,6 +1,6 @@
 process TARGETFINDER {
-    cpus 3
-    memory '8 GB'
+    cpus 2
+    memory '6 GB'
     tag "$sample_id"
     container "quay.io/biocontainers/targetfinder:1.7--hdfd78af_4"
     
