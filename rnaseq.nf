@@ -187,23 +187,24 @@ workflow {
 
     split_fasta_ch = fasta_output
     .flatMap { sample_id, fasta_file ->
-        // Use splitFasta on the file and map each record
         file(fasta_file)
             .splitFasta(record: [id: true, seqString: true])
             .collect { record ->
                 tuple(sample_id, record.id, record.seqString)
             }
     }
+    .buffer(size: 500, remainder: true)
+    
     TARGETFINDER(split_fasta_ch, file(params.annotated_host_mrnas_fasta))
-    // Collect TargetFinder results by sample_id
-    targetfinder_results_collected = TARGETFINDER.out.log
-        .groupTuple(by: [0])  // Group by the first element of tuple (sample_id)
-        .map { sample_id, log_files ->
-            tuple(sample_id, log_files)
-        }
-    CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
-    // Annotate predicted targets
-    ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results)
+    // // Collect TargetFinder results by sample_id
+    // targetfinder_results_collected = TARGETFINDER.out.log
+    //     .groupTuple(by: [0])  // Group by the first element of tuple (sample_id)
+    //     .map { sample_id, log_files ->
+    //         tuple(sample_id, log_files)
+    //     }
+    // CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
+    // // Annotate predicted targets
+    // ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results)
     
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip

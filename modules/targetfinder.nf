@@ -1,24 +1,34 @@
 process TARGETFINDER {
-    cpus 3
-    memory '8 GB'
-    tag "$sample_id"
+    cpus '4'
+    memory '10 GB'
     container "quay.io/biocontainers/targetfinder:1.7--hdfd78af_4"
     
     input:
-    tuple val(sample_id), val(fasta_id), val(sequence)
+    val tuples_array
     path host_transcriptome_fasta
     
     output:
-    tuple val(sample_id), path("*.log"), emit: log
+    path "*.log", emit: log
 
     
     script:
+ // Build a multi-line bash script
+    def commands = new StringBuilder()
+    tuples_array.each { t ->
+        def (sample_id, fasta_id, sequence) = t
+        commands << """
+        echo "Running targetfinder for ${fasta_id}..."
+        targetfinder.pl \\
+            -s ${sequence} \\
+            -q ${fasta_id} \\
+            -t 4 \\
+            -d ${host_transcriptome_fasta} \\
+            -c 0.5 > ${fasta_id}.log
+        """
+    }
+
+    // Pass the commands to bash
     """
-    targetfinder.pl \
-        -s ${sequence} \
-        -q ${fasta_id} \
-        -t 3 \
-        -d ${host_transcriptome_fasta} \
-        -c 0.5 > ${fasta_id}.log
+    ${commands.toString()}
     """
 }
