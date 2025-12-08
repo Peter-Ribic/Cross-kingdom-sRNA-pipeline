@@ -203,7 +203,7 @@ workflow {
         }
     CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
     // Annotate predicted targets
-    ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results)
+    ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
     
     //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
     qc_ch = FASTQC.out.zip
