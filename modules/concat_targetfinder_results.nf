@@ -1,5 +1,7 @@
 process CONCAT_TARGETFINDER_RESULTS {
     tag "$sample_id"
+    memory '100 GB'
+    cpus 20
     container "quay.io/biocontainers/mulled-v2-0fd299cadb7a80e2cc704b5d903ccc54893c512d:377fcafe3b6e7ef703094f8f47a64d081622ee09-2"
     publishDir "results/concat_targetfinder_results", mode: 'copy'
     
