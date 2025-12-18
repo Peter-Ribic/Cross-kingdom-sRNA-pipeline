@@ -7,3 +7,5 @@ results/
 .nextflow/
 
 data/
+
+nextflow.log

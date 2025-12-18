@@ -43,6 +43,7 @@ include {BOWTIE_ALIGN as BOWTIE_ALIGN_HOST_PRELIMINARY } from './modules/bowtie_
 include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
 include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
+include { PRELIMINARY_MULTIQC } from './modules/preliminary_multiqc.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -108,12 +109,19 @@ workflow {
     FASTQC(FETCH_SRA.out)
     TRIM_GALORE(FETCH_SRA.out)
 
-
-    //merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
+    
+    // PRELIMINARY ALIGNMENT TO HOST AND PATHOGEN GENOMES TO ASSESS CONTAMINATION LEVELS
+        host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
+        pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
+        BOWTIE_ALIGN_HOST_PRELIMINARY(merged_ch, host_index_ch, 'host_index')
+        BOWTIE_ALIGN_PATHOGEN_PRELIMINARY(merged_ch, pathogen_index_ch, 'pathogen_index')
 
-
-    //flat_ch = merged_ch.combine(merged_ch_pathogen)
+        preliminary_qc_ch = BOWTIE_ALIGN_HOST_PRELIMINARY.out.log
+            .mix(BOWTIE_ALIGN_PATHOGEN_PRELIMINARY.out.log)
+            .collect()
+        PRELIMINARY_MULTIQC('preliminary_report', preliminary_qc_ch)
+    //
 
     //KEEP_ONLY_PATHOGEN_READS(flat_ch)
     // CHECK FOR VIRUS INFECTIONS
@@ -166,8 +174,6 @@ workflow {
 
 
     //FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
-        pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
-        host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
         BOWTIE_ALIGN_TO_PATHOGEN(KEEP_TREATED_ONLY.out.filtered_reads, pathogen_index_ch)
         BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
         LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
@@ -180,7 +186,6 @@ workflow {
     //
 
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
-    // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
     // map filtered reads to host transcriptome
     BOWTIE_BUILD(file(params.annotated_host_mrnas_fasta), 'host_transcriptome_index')
