@@ -38,6 +38,8 @@ include { BOWTIE_ALIGN_TO_CANDIDATE_SRNAS } from './modules/bowtie_align_to_cand
 include {CHECK_ANNOTATION } from './modules/check_annotation.nf'
 include {BOWTIE_BUILD } from './modules/bowtie_build.nf'
 include {BOWTIE_ALIGN } from './modules/bowtie_align.nf'
+include {BOWTIE_ALIGN as BOWTIE_ALIGN_PATHOGEN_PRELIMINARY } from './modules/bowtie_align.nf'
+include {BOWTIE_ALIGN as BOWTIE_ALIGN_HOST_PRELIMINARY } from './modules/bowtie_align.nf'
 include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
 include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
@@ -46,7 +48,7 @@ include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 params.report_id = "all_single-end"
 params.host_genome_fasta = "data/hops_genome/hops_genome.fa"
 params.pathogen_genome_fasta = "data/verticilium_genome/T2/VnonalfalfaeT2.fasta"
-params.pathogen_genome_gff = "data/verticilium_genome/T2/Verticillium_nonalfalfae_T2.gff3"
+params.pathogen_genome_gff = "data/verticilium_genome/T2/merged.gff3"
 params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
@@ -107,9 +109,13 @@ workflow {
     TRIM_GALORE(FETCH_SRA.out)
 
 
-    merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
+    //merged_ch_pathogen = MERGE_READS_PATHOGEN(TRIM_GALORE_PATHOGEN.out.trimmed_reads)
     merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
 
+
+    //flat_ch = merged_ch.combine(merged_ch_pathogen)
+
+    //KEEP_ONLY_PATHOGEN_READS(flat_ch)
     // CHECK FOR VIRUS INFECTIONS
         viruses_index_ch = BOWTIE_BUILD_VIRUSES(file(params.viruses_genome_fasta))
         BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
@@ -117,11 +123,7 @@ workflow {
         CONCAT_ALIGNMENT_DISTRIBUTION(CHECK_ALIGNMENT_DISTRIBUTION.out.percent_row.collect())
     //
 
-    flat_ch = merged_ch.combine(merged_ch_pathogen)
-
-    KEEP_ONLY_PATHOGEN_READS(flat_ch)
-
-    FILTER_SRNA_LENGTH(KEEP_ONLY_PATHOGEN_READS.out.filtered_reads)
+    FILTER_SRNA_LENGTH(merged_ch)
 
     // COMPARE SRNA LIBRARIES FOR SIMILARITY
         pathogen_only_output_ch = FILTER_SRNA_LENGTH.out.filtered_reads
@@ -161,29 +163,31 @@ workflow {
         KEEP_TREATED_ONLY(paired_ch)
     //
 
-    // MATCHING WITH CANDIDATE sRNAs
-        candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
-        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(KEEP_TREATED_ONLY.out.filtered_reads, candidate_srna_index_ch)
+
+
+    //FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
+        pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
+        host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
+        BOWTIE_ALIGN_TO_PATHOGEN(KEEP_TREATED_ONLY.out.filtered_reads, pathogen_index_ch)
+        BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
+        LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
+        filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
     //
 
+    // MATCHING WITH CANDIDATE sRNAs
+        candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
+        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(filtered_reads, candidate_srna_index_ch)
+    //
 
-    // FILTERING BASED ON READS THAT ALIGN PERFEECTLY TO PATHOGEN AND NOT PERFECTLY TO HOST
-    // pathogen_index_ch = BOWTIE_BUILD_PATHOGEN(file(params.pathogen_genome_fasta))
-    // host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
-    //BOWTIE_ALIGN_TO_PATHOGEN(FILTER_SRNA_LENGTH.out.filtered_reads, pathogen_index_ch)
-    //BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
-    //LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
-    // filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
-
-    SHORTSTACK(KEEP_TREATED_ONLY.out.filtered_reads, file(params.pathogen_genome_fasta))
+    SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
     // ASSIGN de novo PREDICTED sRNA TARGETS TO ANNOTATED GENES
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
     // map filtered reads to host transcriptome
     BOWTIE_BUILD(file(params.annotated_host_mrnas_fasta), 'host_transcriptome_index')
-    BOWTIE_ALIGN(KEEP_TREATED_ONLY.out.filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
+    BOWTIE_ALIGN(filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
      // Split the multi-FASTA file into individual sequences
-    fasta_output = FASTQ_TO_FASTA(KEEP_TREATED_ONLY.out.filtered_reads)
+    fasta_output = FASTQ_TO_FASTA(filtered_reads)
 
     split_fasta_ch = fasta_output
     .flatMap { sample_id, fasta_file ->
@@ -215,10 +219,10 @@ workflow {
             TRIM_GALORE_PATHOGEN.out.trimming_reports,
             TRIM_GALORE_PATHOGEN.out.fastqc_reports,
             BOWTIE_ALIGN_TO_VIRUSES.out.log,
-            KEEP_ONLY_PATHOGEN_READS.out.log,
-            KEEP_TREATED_ONLY.out.log
-            //BOWTIE_ALIGN_TO_PATHOGEN.out.log,
-            //BOWTIE_ALIGN_TO_HOST.out.log
+            // KEEP_ONLY_PATHOGEN_READS.out.log,
+            KEEP_TREATED_ONLY.out.log,
+            BOWTIE_ALIGN_TO_PATHOGEN.out.log,
+            BOWTIE_ALIGN_TO_HOST.out.log
         )
         .collect()
 
