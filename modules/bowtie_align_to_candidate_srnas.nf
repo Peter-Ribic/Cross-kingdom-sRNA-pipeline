@@ -1,7 +1,7 @@
 process BOWTIE_ALIGN_TO_CANDIDATE_SRNAS {
     tag "$sample_id"
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/${sample_id}/candidate_srnas_alignments", mode: 'symlink'
+    publishDir "results/candidate_srnas_alignments/${sample_id}", mode: 'symlink'
     input:
     tuple val(sample_id), path(reads)
     path index_files

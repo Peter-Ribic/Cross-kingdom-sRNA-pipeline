@@ -3,7 +3,7 @@ process KEEP_TREATED_ONLY {
     memory '200 GB'
     cpus 20
     container "quay.io/biocontainers/bioawk:1.0--h577a1d6_13"
-    publishDir "results/${sample_id}/treated_minus_control", mode: 'copy'
+    publishDir "results/treated_minus_control/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(treated_reads), path(control_reads)

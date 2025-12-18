@@ -5,7 +5,7 @@ process FILTER_SRNA_LENGTH {
     cpus 40
     container "quay.io/biocontainers/seqkit:2.10.1--he881be0_0"
 
-    publishDir "results/${sample_id}/filtered_srna", mode: 'copy'
+    publishDir "results/filtered_srna/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(reads)
@@ -25,7 +25,7 @@ process FILTER_SRNA_LENGTH {
 
     # Filter reads between 20 and 22 nt
     echo "Filtering reads between 20 and 22 nt..."
-    seqkit seq -m 20 -M 22 ${reads} | gzip > ${sample_id}_20_22nt.fq.gz
+    seqkit seq -m 20 -M 24 ${reads} | gzip > ${sample_id}_20_22nt.fq.gz
 
     echo "Done. Outputs:"
     echo "- ${sample_id}_20_22nt.fq.gz"

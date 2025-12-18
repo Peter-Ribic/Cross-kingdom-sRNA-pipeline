@@ -2,7 +2,7 @@ process BOWTIE_ALIGN_TO_HOST {
     tag "$sample_id"
     memory '100 GB'
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/${sample_id}/host_alignments", mode: 'symlink'
+    publishDir "results/host_alignments/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(reads), path(sam_file), path(pathogen_ids)
@@ -16,7 +16,7 @@ process BOWTIE_ALIGN_TO_HOST {
     """
     bowtie2 \
         --end-to-end \
-        --score-min L,0,-0.1 \
+        --score-min L,0,0 \
         --no-unal \
         -p ${task.cpus} \
         -x host_index \

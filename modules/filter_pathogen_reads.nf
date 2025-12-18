@@ -1,7 +1,7 @@
 process FILTER_PATHOGEN_READS {
     tag "$sample_id"
     container "quay.io/biocontainers/seqkit:2.10.1--he881be0_0"
-    publishDir "results/${sample_id}/pathogen_specific_reads", mode: 'symlink'
+    publishDir "results/pathogen_specific_reads/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(trimmed_reads), path (pathogen_unique_ids)

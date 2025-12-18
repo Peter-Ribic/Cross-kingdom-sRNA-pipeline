@@ -3,7 +3,7 @@ process LIST_PATHOGEN_READS {
     memory '120 GB'
     cpus 40
     container "quay.io/biocontainers/samtools:1.22.1--h96c455f_0"
-    publishDir "results/${sample_id}/pathogen_reads_list", mode: 'symlink'
+    publishDir "results/pathogen_reads_list/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(reads), path(sam_file), path(pathogen_ids)
