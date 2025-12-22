@@ -45,6 +45,7 @@ include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_resu
 include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 include { PRELIMINARY_MULTIQC } from './modules/preliminary_multiqc.nf'
 include { CHECK_TF_READS_LOCATION } from './modules/check_tf_reads_location.nf'
+include { MIRNA_TARGET } from './modules/mirna_target.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -56,6 +57,7 @@ params.sra_csv = "data/sra_accessions.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
 params.annotated_host_mrnas_fasta = "data/annotated_hop_mrnas/sequence.fasta"
+params.mirna_target_repo = "data/MiRNATarget"
 
 params.mock_hop_sample_control = "data/mock_data/hop_sample_control.fq"
 params.mock_hop_sample_treated = "data/mock_data/hop_sample_treated.fq"
@@ -192,37 +194,41 @@ workflow {
     BOWTIE_BUILD(file(params.annotated_host_mrnas_fasta), 'host_transcriptome_index')
     BOWTIE_ALIGN(filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
+    // USE SHORTSTACK MAJORRNA OUTPUT TO PREDICT HOP TARGETS
+        MIRNA_TARGET(SHORTSTACK.out.fasta, file(params.annotated_host_mrnas_fasta), file(params.mirna_target_repo))
+
+    //
      // Split the multi-FASTA file into individual sequences
     //fasta_output = FASTQ_TO_FASTA(filtered_reads)
 
-    split_fasta_ch = SHORTSTACK.out.fasta
-    .flatMap { sample_id, fasta_file ->
-        // Use splitFasta on the file and map each record
-        file(fasta_file)
-            .splitFasta(record: [id: true, seqString: true])
-            .collect { record ->
-                tuple(sample_id, record.id, record.seqString)
-            }
-    }
-    split_fasta_ch.view()
-    TARGETFINDER(split_fasta_ch, file(params.annotated_host_mrnas_fasta))
-    // Collect TargetFinder results by sample_id
-    targetfinder_results_collected = TARGETFINDER.out.log
-        .groupTuple(by: [0])  // Group by the first element of tuple (sample_id)
-        .map { sample_id, log_files ->
-            tuple(sample_id, log_files)
-        }
-    CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
-    // Annotate predicted targets
-        ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
+    // split_fasta_ch = SHORTSTACK.out.fasta
+    // .flatMap { sample_id, fasta_file ->
+    //     // Use splitFasta on the file and map each record
+    //     file(fasta_file)
+    //         .splitFasta(record: [id: true, seqString: true])
+    //         .collect { record ->
+    //             tuple(sample_id, record.id, record.seqString)
+    //         }
+    // }
+    // split_fasta_ch.view()
+    // TARGETFINDER(split_fasta_ch, file(params.annotated_host_mrnas_fasta))
+    // // Collect TargetFinder results by sample_id
+    // targetfinder_results_collected = TARGETFINDER.out.log
+    //     .groupTuple(by: [0])  // Group by the first element of tuple (sample_id)
+    //     .map { sample_id, log_files ->
+    //         tuple(sample_id, log_files)
+    //     }
+    // CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
+    // // Annotate predicted targets
+    //     ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
         
-        tf_ch = CONCAT_TARGETFINDER_RESULTS.out.combined_results         // e.g. tuple(sample_id, tf_txt)
-        ss_ch = SHORTSTACK.out.bam // e.g. tuple(sample_id, shortstack_dir)
+    //     tf_ch = CONCAT_TARGETFINDER_RESULTS.out.combined_results         // e.g. tuple(sample_id, tf_txt)
+    //     ss_ch = SHORTSTACK.out.bam // e.g. tuple(sample_id, shortstack_dir)
 
-        tf_ss = tf_ch.join(ss_ch)             // matches by sample_id key
-        tf_ss.view()
-        CHECK_TF_READS_LOCATION(tf_ss, file(params.pathogen_genome_gff))
-    //
+    //     tf_ss = tf_ch.join(ss_ch)             // matches by sample_id key
+    //     tf_ss.view()
+    //     CHECK_TF_READS_LOCATION(tf_ss, file(params.pathogen_genome_gff))
+    // //
     qc_ch = FASTQC.out.zip
         .mix(
             FASTQC.out.html,
