@@ -12,6 +12,9 @@ process SHORTSTACK {
 
     output:
     tuple val(sample_id), path("ShortStack_out"), emit: shortstack_out
+    tuple val(sample_id), path("ShortStack_out/*condensed.bam"), emit: bam
+    tuple val(sample_id), path("ShortStack_out/*condensed.fa"), emit: fasta
+
 
     script:
     """

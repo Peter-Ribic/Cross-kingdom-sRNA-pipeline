@@ -44,6 +44,7 @@ include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
 include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 include { PRELIMINARY_MULTIQC } from './modules/preliminary_multiqc.nf'
+include { CHECK_TF_READS_LOCATION } from './modules/check_tf_reads_location.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -192,9 +193,9 @@ workflow {
     BOWTIE_ALIGN(filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
      // Split the multi-FASTA file into individual sequences
-    fasta_output = FASTQ_TO_FASTA(filtered_reads)
+    //fasta_output = FASTQ_TO_FASTA(filtered_reads)
 
-    split_fasta_ch = fasta_output
+    split_fasta_ch = SHORTSTACK.out.fasta
     .flatMap { sample_id, fasta_file ->
         // Use splitFasta on the file and map each record
         file(fasta_file)
@@ -203,6 +204,7 @@ workflow {
                 tuple(sample_id, record.id, record.seqString)
             }
     }
+    split_fasta_ch.view()
     TARGETFINDER(split_fasta_ch, file(params.annotated_host_mrnas_fasta))
     // Collect TargetFinder results by sample_id
     targetfinder_results_collected = TARGETFINDER.out.log
@@ -212,9 +214,15 @@ workflow {
         }
     CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
     // Annotate predicted targets
-    ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
-    
-    //PREDICT_HOP_TARGETS(filtered_reads, file(params.host_transcriptome_fasta))
+        ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
+        
+        tf_ch = CONCAT_TARGETFINDER_RESULTS.out.combined_results         // e.g. tuple(sample_id, tf_txt)
+        ss_ch = SHORTSTACK.out.bam // e.g. tuple(sample_id, shortstack_dir)
+
+        tf_ss = tf_ch.join(ss_ch)             // matches by sample_id key
+        tf_ss.view()
+        CHECK_TF_READS_LOCATION(tf_ss, file(params.pathogen_genome_gff))
+    //
     qc_ch = FASTQC.out.zip
         .mix(
             FASTQC.out.html,
