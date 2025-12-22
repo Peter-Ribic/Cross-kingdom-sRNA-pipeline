@@ -24,7 +24,7 @@ process SHORTSTACK {
         --genomefile ${genome_fasta} \
         --outdir ShortStack_out \
         --threads 10 \
-        --mincov 1000 \
+        --mincov 200 \
         --dicermin 18
     """
 }

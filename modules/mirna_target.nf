@@ -13,11 +13,14 @@ process MIRNA_TARGET {
 
     output:
     tuple val(sample_id), path("${sample_id}_identified_targets.tsv"), emit: results
+    tuple val(sample_id), path("${sample_id}_shortstack_majorRNAs.fasta"), emit: extracted_fasta
 
     script:
     """
-     > ${sample_id}_shortstack_majorRNAs.fasta
-    ssearch36 -f -8 -g -3 -E 10000 -T 8 -b 200 -r +4/-3 -n -U -W 10 -N 20000 \
+     # Extract major RNAs from ShortStack Results.txt and create FASTA file
+    awk -F'\\t' 'NR>1 && \$12 > 0 {print ">"\$2"\\n"\$11}' ${shortstack_results} > ${sample_id}_shortstack_majorRNAs.fasta
+    
+    ssearch36 -i -f -8 -g -3 -E 10000 -T 8 -b 200 -r +4/-3 -n -U -W 10 -N 20000 \
     ${sample_id}_shortstack_majorRNAs.fasta ${transcriptome_fasta} \
     | ${mirna_target_repo}/parse_ssearch.py \
     | ${mirna_target_repo}/parse_mirna_targets.py \

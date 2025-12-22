@@ -195,11 +195,15 @@ workflow {
     BOWTIE_ALIGN(filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
     // USE SHORTSTACK MAJORRNA OUTPUT TO PREDICT HOP TARGETS
-        MIRNA_TARGET(SHORTSTACK.out.fasta, file(params.annotated_host_mrnas_fasta), file(params.mirna_target_repo))
-
+        MIRNA_TARGET(SHORTSTACK.out.results, file(params.annotated_host_mrnas_fasta), file(params.mirna_target_repo))
     //
-     // Split the multi-FASTA file into individual sequences
-    //fasta_output = FASTQ_TO_FASTA(filtered_reads)
+
+    // ANNOTATE TARGETS
+        ANNOTATE_TARGETS(MIRNA_TARGET.out.results, file(params.annotated_host_mrnas_fasta))
+    //
+
+    // Split the multi-FASTA file into individual sequences
+    FASTQ_TO_FASTA(filtered_reads)
 
     // split_fasta_ch = SHORTSTACK.out.fasta
     // .flatMap { sample_id, fasta_file ->
@@ -220,7 +224,6 @@ workflow {
     //     }
     // CONCAT_TARGETFINDER_RESULTS(targetfinder_results_collected)
     // // Annotate predicted targets
-    //     ANNOTATE_TARGETS(CONCAT_TARGETFINDER_RESULTS.out.combined_results, file(params.annotated_host_mrnas_fasta))
         
     //     tf_ch = CONCAT_TARGETFINDER_RESULTS.out.combined_results         // e.g. tuple(sample_id, tf_txt)
     //     ss_ch = SHORTSTACK.out.bam // e.g. tuple(sample_id, shortstack_dir)
