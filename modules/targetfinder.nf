@@ -19,6 +19,6 @@ process TARGETFINDER {
         -q ${fasta_id} \
         -t 3 \
         -d ${host_transcriptome_fasta} \
-        -c 1.5 > ${fasta_id}.log
+        -c 2.5 > ${fasta_id}.log
     """
 }

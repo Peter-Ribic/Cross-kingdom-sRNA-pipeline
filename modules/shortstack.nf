@@ -15,6 +15,8 @@ process SHORTSTACK {
     tuple val(sample_id), path("ShortStack_out/*condensed.bam"), emit: bam
     tuple val(sample_id), path("ShortStack_out/*condensed.fa"), emit: fasta
     tuple val(sample_id), path("ShortStack_out/Results.txt"), emit: results
+    tuple val(sample_id), path("${sample_id}_shortstack_majorRNAs.fasta"), emit: major_rnas
+
 
 
     script:
@@ -24,7 +26,10 @@ process SHORTSTACK {
         --genomefile ${genome_fasta} \
         --outdir ShortStack_out \
         --threads 10 \
-        --mincov 200 \
+        --mincov 100 \
         --dicermin 18
+
+    # Extract major RNAs from ShortStack Results.txt and create FASTA file
+    awk -F'\\t' 'NR>1 && \$12 > 0 {print ">"\$2"\\n"\$11}' ShortStack_out/Results.txt > ${sample_id}_shortstack_majorRNAs.fasta
     """
 }
