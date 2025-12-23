@@ -24,7 +24,7 @@ process MIRNA_TARGET {
     ${sample_id}_shortstack_majorRNAs.fasta ${transcriptome_fasta} \
     | ${mirna_target_repo}/parse_ssearch.py \
     | ${mirna_target_repo}/parse_mirna_targets.py \
-        --E_cutoff 2 \
+        --E_cutoff 3 \
         --num_mismatch_seed 2 \
         --hsp_cutoff 18 \
         --maximum_alignment_length 24 \
