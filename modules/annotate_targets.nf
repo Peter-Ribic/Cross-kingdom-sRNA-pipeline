@@ -95,7 +95,7 @@ process ANNOTATE_TARGETS {
 
     if [[ -s ${sample_id}_functional_annotations.txt ]]; then
       # Keywords are broad; adjust for your plant-pathogen context as needed
-      grep -i "defense\\|resistance\\|PR[0-9]\\|chitinase\\|glucanase\\|NBS\\|LRR\\|RLK\\|WRKY\\|pathogenesis" ${sample_id}_functional_annotations.txt >> ${sample_id}_defense_targets.txt 2>/dev/null || echo "No defense-related genes found in annotations" >> ${sample_id}_defense_targets.txt
+      grep -i "defense\\|resistance\\|PR[0-9]\\|chitinase\\|glucanase\\|NBS\\|LRR\\|RLK\\|WRKY\\|pathogenesis" ${sample_id}_functional_annotations.txt >> ${sample_id}_defense_targets.txt 2>/dev/null || echo "No defense-related genes found in annotations" > status.txt
     fi
 
     defense_targets_count=\$(tail -n +4 ${sample_id}_defense_targets.txt | wc -l || echo "0")
