@@ -19,20 +19,26 @@ process ANNOTATE_TARGETS {
     """
     # Extract unique NCBI gene IDs from the target file
     grep -o 'GeneID:[0-9]*' ${target_file} | cut -d: -f2 | sort -u > ${sample_id}_target_ids.txt
+
+    # Extract query name -> GeneID mapping (unique pairs)
+    awk '/^query=/{ q=\$0; sub(/^query=/,"",q); sub(/,.*/,"",q); if (match(\$0,/GeneID:[0-9]+/)){ gid=substr(\$0,RSTART+7,RLENGTH-7); print q"\\t"gid }}' ${target_file} | sort -u > ${sample_id}_query_gene_map.txt
     
     # Count unique targets
     unique_targets=\$(wc -l < ${sample_id}_target_ids.txt)
     enrichment_ratio=""
     
     # Get functional annotations for each gene ID
-    echo -e "GeneID\\tAccession\\tDescription\\tSymbol\\tOrganism" > ${sample_id}_functional_annotations.txt
+    echo -e "Query\\tGeneID\\tAccession\\tDescription\\tSymbol\\tOrganism" > ${sample_id}_functional_annotations.txt
     
     # Process each gene ID
     while read gene_id; do
         if [[ -n "\$gene_id" ]]; then
+            query_names=\$(awk -v gid="\$gene_id" '\$2==gid{print \$1}' ${sample_id}_query_gene_map.txt | sort -u | paste -sd"," -)
+            if [[ -z "\$query_names" ]]; then query_names="NA"; fi
             # Use esummary to get gene information
             esummary -db gene -id "\$gene_id" 2>/dev/null | \
-            xtract -pattern DocumentSummary -element Id AccessionVersion Description Name Organism/ScientificName >> ${sample_id}_functional_annotations.txt 2>/dev/null || echo "\$gene_id\\tERROR\\tFailed to fetch" >> ${sample_id}_functional_annotations.txt
+            xtract -pattern DocumentSummary -element Id AccessionVersion Description Name Organism/ScientificName | \
+            awk -v q="\$query_names" 'BEGIN{OFS="\\t"}{print q,\$0}' >> ${sample_id}_functional_annotations.txt 2>/dev/null || echo -e "\$query_names\\t\$gene_id\\tERROR\\tFailed to fetch\\t\\t" >> ${sample_id}_functional_annotations.txt
         fi
     done < ${sample_id}_target_ids.txt
     
