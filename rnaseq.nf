@@ -46,6 +46,8 @@ include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 include { PRELIMINARY_MULTIQC } from './modules/preliminary_multiqc.nf'
 include { CHECK_TF_READS_LOCATION } from './modules/check_tf_reads_location.nf'
 include { MIRNA_TARGET } from './modules/mirna_target.nf'
+include { PLOT_SHORTSTACK_CLUSTERS } from './modules/plot_clusters.nf'
+include { PLOT_SRNA_LENGTH_DISTRIBUTION } from './modules/plot_length_dist.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
@@ -135,6 +137,7 @@ workflow {
     //
 
     FILTER_SRNA_LENGTH(merged_ch)
+    PLOT_SRNA_LENGTH_DISTRIBUTION(FILTER_SRNA_LENGTH.out.length_distribution)
 
     // COMPARE SRNA LIBRARIES FOR SIMILARITY
         pathogen_only_output_ch = FILTER_SRNA_LENGTH.out.filtered_reads
@@ -201,9 +204,10 @@ workflow {
     // ANNOTATE TARGETS
         ANNOTATE_TARGETS(MIRNA_TARGET.out.results, file(params.annotated_host_mrnas_fasta))
     //
+    PLOT_SHORTSTACK_CLUSTERS(SHORTSTACK.out.results, file(params.pathogen_genome_fasta))
 
     // Split the multi-FASTA file into individual sequences
-    FASTQ_TO_FASTA(filtered_reads)
+    //FASTQ_TO_FASTA(filtered_reads)
 
     // split_fasta_ch = SHORTSTACK.out.fasta
     // .flatMap { sample_id, fasta_file ->
