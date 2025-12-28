@@ -25,6 +25,6 @@ process SHORTSTACK {
         --outdir ShortStack_out \
         --threads 10 \
         --mincov 400 \
-        --dicermin 18
+        --dicermin 20
     """
 }

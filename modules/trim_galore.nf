@@ -20,6 +20,6 @@ process TRIM_GALORE {
         path("*_trimmed_fastqc.{zip,html}"), emit: fastqc_reports
     script:
     """
-    trim_galore --fastqc --gzip --small_rna --length 17 ${reads.join(' ')}
+    trim_galore --fastqc --gzip --small_rna --length 19 ${reads.join(' ')}
     """
 }
