@@ -38,14 +38,29 @@ process ANNOTATE_TARGETS {
         ' \\
       | sort -u > ${sample_id}_target_accessions.txt
 
+    # Extract query -> accession mapping (unique pairs)
+    # Assumes query is in column 1 and subject_id is in column 2
+    awk -F '\\t' '\$0 !~ /^#/ && NF>1 {print \$1"\\t"\$2}' ${target_file} \\
+      | awk -F '\\t' 'BEGIN{OFS="\\t"}
+          {
+            q=\$1
+            s=\$2
+            if (match(s, /XP_[0-9]+\\.[0-9]+/)) { print q, substr(s, RSTART, RLENGTH); next }
+            if (match(s, /XM_[0-9]+\\.[0-9]+/)) { print q, substr(s, RSTART, RLENGTH); next }
+          }' \\
+      | sort -u > ${sample_id}_query_accession_map.txt
+
     unique_targets=\$(wc -l < ${sample_id}_target_accessions.txt || echo "0")
 
     # 2) Fetch functional annotations
-    # Output columns: Accession \\t Title/Description \\t Organism
-    echo -e "Accession\\tDescription\\tOrganism" > ${sample_id}_functional_annotations.txt
+    # Output columns: Query \\t Accession \\t Title/Description \\t Organism
+    echo -e "Query\\tAccession\\tDescription\\tOrganism" > ${sample_id}_functional_annotations.txt
 
     while read acc; do
       [[ -z "\$acc" ]] && continue
+
+      query_names=\$(awk -v a="\$acc" '\$2==a{print \$1}' ${sample_id}_query_accession_map.txt | sort -u | paste -sd"," -)
+      if [[ -z "\$query_names" ]]; then query_names="NA"; fi
 
       # Decide which NCBI db to query
       db="protein"
@@ -72,15 +87,15 @@ process ANNOTATE_TARGETS {
 
         # If still empty, flag it
         if [[ -z "\$title" && -z "\$org" ]]; then
-          echo -e "\$acc\\tERROR: Failed to parse docsum\\t" >> ${sample_id}_functional_annotations.txt
+          echo -e "\$query_names\\t\$acc\\tERROR: Failed to parse docsum\\t" >> ${sample_id}_functional_annotations.txt
         else
           # Replace tabs/newlines just in case
           title=\$(echo "\$title" | tr '\\t\\r\\n' ' ' | sed 's/  */ /g')
           org=\$(echo "\$org" | tr '\\t\\r\\n' ' ' | sed 's/  */ /g')
-          echo -e "\$acc\\t\$title\\t\$org" >> ${sample_id}_functional_annotations.txt
+          echo -e "\$query_names\\t\$acc\\t\$title\\t\$org" >> ${sample_id}_functional_annotations.txt
         fi
       else
-        echo -e "\$acc\\tERROR: esummary failed\\t" >> ${sample_id}_functional_annotations.txt
+        echo -e "\$query_names\\t\$acc\\tERROR: esummary failed\\t" >> ${sample_id}_functional_annotations.txt
       fi
     done < ${sample_id}_target_accessions.txt
 
@@ -91,7 +106,7 @@ process ANNOTATE_TARGETS {
     # 3) Defense keyword scan (based on annotation description)
     echo "Defense-Related Targets" > ${sample_id}_defense_targets.txt
     echo "======================" >> ${sample_id}_defense_targets.txt
-    echo -e "Accession\\tDescription\\tOrganism" >> ${sample_id}_defense_targets.txt
+    echo -e "Query\\tAccession\\tDescription\\tOrganism" >> ${sample_id}_defense_targets.txt
 
     if [[ -s ${sample_id}_functional_annotations.txt ]]; then
       # Keywords are broad; adjust for your plant-pathogen context as needed
