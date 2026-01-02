@@ -1,6 +1,5 @@
 process BOWTIE_BUILD_VIRUSES {
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/viruses_index", mode: 'copy'
 
     input:
     path fasta

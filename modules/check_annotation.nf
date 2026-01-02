@@ -3,7 +3,7 @@ process CHECK_ANNOTATION {
     
     container "quay.io/biocontainers/bedtools:2.31.1--h13024bc_3"
     
-    publishDir "results/shortstack_annotated/${sample_id}", mode: 'copy'
+    publishDir "results/shortstack/shortstack_annotated/${sample_id}", mode: 'copy'
     
     input:
     tuple val(sample_id), path(shortstack_dir)
