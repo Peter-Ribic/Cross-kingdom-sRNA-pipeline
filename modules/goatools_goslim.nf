@@ -16,7 +16,7 @@ process GOATOOLS_GOSLIM {
   #!/bin/bash
   
   # 1. Download plant-specific GO slim
-  wget -q https://current.geneontology.org/ontology/subsets/goslim_plant.obo -O plant_goslim.obo
+  wget -q https://current.geneontology.org/ontology/subsets/goslim_generic.obo -O plant_goslim.obo
   
   # 2. Download full GO ontology
   wget -q http://purl.obolibrary.org/obo/go/go-basic.obo -O go-basic.obo
