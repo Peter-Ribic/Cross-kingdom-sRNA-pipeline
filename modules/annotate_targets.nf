@@ -14,21 +14,11 @@ process ANNOTATE_TARGETS {
     path("${sample_id}_defense_targets.txt"), emit: defense_targets
     path("${sample_id}_summary.txt"), emit: summary
     path("${sample_id}_enrichment_analysis.txt"), emit: enrichment_results
+    tuple val(sample_id),path("${sample_id}_targets_proteins.faa"), path("${sample_id}_transcriptome_proteins.faa"), emit: fastas
 
     script:
     """
     set -euo pipefail
-
-    # MiRNATarget output: subject_id examples:
-    #   lcl|XM_062233053.1_cds_XP_062089037.1_1_1
-    #   lcl|JQ740210.1_cds_AGA17925.1_1_489
-    #   lcl|EF624248.1_cds_ABS17598.1_1_19
-    #   lcl|MW658771.1_cds_UBU95743.1_1_1857
-    #
-    # We will extract accessions in this priority:
-    #   1) XP_####.#
-    #   2) token after _cds_ (e.g. AGA17925.1 / ABS17598.1 / UBU95743.1 / BAB40666.1)
-    #   3) XM_####.#
 
     ######################################################################
     # 1) Extract unique accessions from subject_id
@@ -57,7 +47,6 @@ process ANNOTATE_TARGETS {
 
     ######################################################################
     # 1b) Extract query -> accession mapping (unique pairs)
-    # Assumes query is in column 1 and subject_id is in column 2
     ######################################################################
     awk -F '\\t' '\$0 !~ /^#/ && NF>1 {print \$1"\\t"\$2}' ${target_file} \\
       | awk -F '\\t' 'BEGIN{OFS="\\t"}
@@ -65,10 +54,8 @@ process ANNOTATE_TARGETS {
             q=\$1
             s=\$2
 
-            # 1) prefer XP_
             if (match(s, /XP_[0-9]+\\.[0-9]+/)) { print q, substr(s, RSTART, RLENGTH); next }
 
-            # 2) extract token after _cds_
             if (match(s, /_cds_[A-Za-z0-9]+(\\.[0-9]+)?/)) {
               x = substr(s, RSTART, RLENGTH)
               sub(/^_cds_/, "", x)
@@ -76,7 +63,6 @@ process ANNOTATE_TARGETS {
               next
             }
 
-            # 3) fallback XM_
             if (match(s, /XM_[0-9]+\\.[0-9]+/)) { print q, substr(s, RSTART, RLENGTH); next }
           }' \\
       | sort -u > ${sample_id}_query_accession_map.txt
@@ -86,9 +72,6 @@ process ANNOTATE_TARGETS {
     ######################################################################
     # 2) Build a local lookup table from mrna_fasta headers
     # Columns: protein_id  gene  protein  full_header  first_token_id
-    #
-    # Example header:
-    # >lcl|AB053487.1_cds_BAB40666.1_1 [gene=fpps] [protein=...] [protein_id=BAB40666.1] ...
     ######################################################################
     awk '
       BEGIN{ OFS="\\t" }
@@ -131,6 +114,60 @@ process ANNOTATE_TARGETS {
     }
 
     ######################################################################
+    # NEW 2c) Build protein FASTA for (a) targets and (b) whole transcriptome
+    # Uses NCBI efetch -db protein
+    ######################################################################
+    # (b) whole transcriptome protein_id list from mrna_fasta map
+    cut -f1 ${sample_id}_mrna_proteinid_map.tsv | sort -u > ${sample_id}_transcriptome_protein_ids.txt
+    n_bg_ids=\$(wc -l < ${sample_id}_transcriptome_protein_ids.txt || echo "0")
+
+    # (a) target protein IDs: keep only accessions that look like protein IDs and/or appear in protein_id map
+    # (We exclude XM_ because those are transcripts)
+    grep -v '^XM_' ${sample_id}_target_accessions.txt | sort -u > ${sample_id}_targets_protein_ids.txt
+    n_tgt_ids=\$(wc -l < ${sample_id}_targets_protein_ids.txt || echo "0")
+
+    fetch_fasta_batch() {
+      local ids_file="\$1"
+      local out_faa="\$2"
+
+      : > "\$out_faa"
+      split -l 200 "\$ids_file" "\${out_faa}.chunk_" || true
+
+      for chunk in \${out_faa}.chunk_*; do
+        [[ -s "\$chunk" ]] || continue
+        ids=\$(paste -sd, "\$chunk")
+
+        efetch -db protein -id "\$ids" -format fasta \\
+          | awk '
+              /^>/{
+                sub(/^>/, "", \$0)
+                split(\$0, a, /[ \\t]/)
+                print ">"a[1]
+                next
+              }
+              { print }
+            ' >> "\$out_faa"
+      done
+
+      # Cleanup chunk files
+      rm -f "\${out_faa}.chunk_"* 2>/dev/null || true
+    }
+
+    # Fetch FASTA for targets
+    if [[ "\$n_tgt_ids" -gt 0 ]]; then
+      fetch_fasta_batch ${sample_id}_targets_protein_ids.txt ${sample_id}_targets_proteins.faa
+    else
+      : > ${sample_id}_targets_proteins.faa
+    fi
+
+    # Fetch FASTA for whole transcriptome
+    if [[ "\$n_bg_ids" -gt 0 ]]; then
+      fetch_fasta_batch ${sample_id}_transcriptome_protein_ids.txt ${sample_id}_transcriptome_proteins.faa
+    else
+      : > ${sample_id}_transcriptome_proteins.faa
+    fi
+
+    ######################################################################
     # 3) Fetch functional annotations (prefer local FASTA header, fallback NCBI)
     ######################################################################
     echo -e "Query\\tAccession\\tDescription\\tOrganism\\tFASTA_gene\\tFASTA_protein\\tFASTA_header" > ${sample_id}_functional_annotations.txt
@@ -145,7 +182,6 @@ process ANNOTATE_TARGETS {
       fasta_prot=""
       fasta_hdr=""
 
-      # Local FASTA lookup (protein_id exact match; else header-text search)
       if out_local=\$(lookup_fasta_by_pid "\$acc" 2>/dev/null); then
         fasta_gene=\$(echo "\$out_local" | cut -f1)
         fasta_prot=\$(echo "\$out_local" | cut -f2)
@@ -175,7 +211,6 @@ process ANNOTATE_TARGETS {
         continue
       fi
 
-      # Fallback to NCBI
       db="protein"
       if echo "\$acc" | grep -q '^XM_'; then
         db="nuccore"
@@ -204,12 +239,11 @@ process ANNOTATE_TARGETS {
       fi
     done < ${sample_id}_target_accessions.txt
 
-    # Count successfully annotated (exclude header + ERROR)
     total_annotated_targets=\$(tail -n +2 ${sample_id}_functional_annotations.txt | grep -v '^.*\\tERROR' | wc -l || echo "0")
     failed_annotations=\$(tail -n +2 ${sample_id}_functional_annotations.txt | grep -c '^.*\\tERROR' || echo "0")
 
     ######################################################################
-    # 4) Defense keyword scan (based on annotation description)
+    # 4) Defense keyword scan
     ######################################################################
     echo "Defense-Related Targets" > ${sample_id}_defense_targets.txt
     echo "======================" >> ${sample_id}_defense_targets.txt
@@ -223,7 +257,7 @@ process ANNOTATE_TARGETS {
     defense_targets_count=\$(tail -n +4 ${sample_id}_defense_targets.txt | wc -l || echo "0")
 
     ######################################################################
-    # 5) "Background" defense-like prevalence in mRNA FASTA headers (rough proxy)
+    # 5) Existing enrichment proxy (unchanged)
     ######################################################################
     echo "Enrichment Analysis Results" > ${sample_id}_enrichment_analysis.txt
     echo "===========================" >> ${sample_id}_enrichment_analysis.txt
@@ -273,8 +307,11 @@ process ANNOTATE_TARGETS {
     fi
 
     ######################################################################
-    # 6) Summary
+    # 6) Summary (add FASTA counts; minimal change)
     ######################################################################
+    n_tgt_faa=\$(grep -c '^>' ${sample_id}_targets_proteins.faa 2>/dev/null || echo "0")
+    n_bg_faa=\$(grep -c '^>' ${sample_id}_transcriptome_proteins.faa 2>/dev/null || echo "0")
+
     echo "Target Annotation Summary for ${sample_id}" > ${sample_id}_summary.txt
     echo "======================================" >> ${sample_id}_summary.txt
     echo "Input MiRNATarget file: ${target_file}" >> ${sample_id}_summary.txt
@@ -282,6 +319,10 @@ process ANNOTATE_TARGETS {
     echo "Successfully annotated: \$total_annotated_targets" >> ${sample_id}_summary.txt
     echo "Failed annotations: \$failed_annotations" >> ${sample_id}_summary.txt
     echo "Defense-related targets: \$defense_targets_count" >> ${sample_id}_summary.txt
+    echo "" >> ${sample_id}_summary.txt
+    echo "Protein FASTA files created:" >> ${sample_id}_summary.txt
+    echo "  Targets protein FASTA: ${sample_id}_targets_proteins.faa (\\\$n_tgt_faa sequences)" >> ${sample_id}_summary.txt
+    echo "  Transcriptome protein FASTA: ${sample_id}_transcriptome_proteins.faa (\\\$n_bg_faa sequences)" >> ${sample_id}_summary.txt
     echo "" >> ${sample_id}_summary.txt
     echo "Enrichment (keyword-based proxy):" >> ${sample_id}_summary.txt
     echo "Background defense: \$defense_in_mrna/\$total_mrna_transcripts (\$mrna_defense_prop)" >> ${sample_id}_summary.txt
