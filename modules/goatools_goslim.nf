@@ -16,7 +16,6 @@ process GOATOOLS_GOSLIM {
   #!/bin/bash
   set -euo pipefail
 
-  # 1. Download GO slim (swap this link to test other slims)
   wget -q https://current.geneontology.org/ontology/subsets/goslim_generic.obo -O plant_goslim.obo
 
   # 2. Download full GO ontology
@@ -34,6 +33,7 @@ from goatools.base import get_godag
 godag = get_godag("go-basic.obo", optional_attrs={'relationship'})
 goslim = get_godag("plant_goslim.obo", optional_attrs={'relationship'})
 
+# Root-ish terms to exclude from mapping/counting
 EXCLUDE_ROOTS = {'GO:0009987', 'GO:0005622', 'GO:0008152', 'GO:0005737'}
 
 def read_go_annotations(filename):
@@ -187,7 +187,9 @@ df = df.sort_values('Target_Genes', ascending=False)
 # Save full results (UNFILTERED)
 df.to_csv("${sample_id}_goslim_categories.tsv", sep='\\t', index=False)
 
-# Summary
+# Summary: also log ALL categories with FDR<=0.1
+eps_fc = 0.1  # same pseudocount used in plots/summary FC calculations
+
 with open("${sample_id}_goslim_summary.txt", 'w') as f:
     f.write(f"Plant GO Slim Analysis - ${sample_id}\\n")
     f.write("="*60 + "\\n\\n")
@@ -195,8 +197,28 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
     f.write(f"Background genes with GO slim annotations: {len(background_categories)}/{len(background_annotations)} ({(len(background_categories)/len(background_annotations)*100) if len(background_annotations) else 0:.1f}%)\\n")
     f.write(f"Unique GO slim categories found: {len(df)} (root terms excluded)\\n\\n")
 
-    sig = df[(df['FDR_BH'].notna()) & (df['FDR_BH'] <= 0.1)]
+    sig = df[(df['FDR_BH'].notna()) & (df['FDR_BH'] <= 0.1)].copy()
     f.write(f"Significant categories (FDR_BH<=0.1): {len(sig)}/{len(df)}\\n\\n")
+
+    f.write("All categories with FDR_BH <= 0.1 (sorted by FDR):\\n")
+    f.write("-"*90 + "\\n")
+    if sig.empty:
+        f.write("  None\\n\\n")
+    else:
+        sig = sig.sort_values('FDR_BH', ascending=True)
+        for _, row in sig.iterrows():
+            fc = (float(row['Target_Percent']) + eps_fc) / (float(row['Background_Percent']) + eps_fc)
+            p = row.get('P_Value', None)
+            q = row.get('FDR_BH', None)
+            p_str = "NA" if pd.isna(p) else f"{p:.2g}"
+            q_str = "NA" if pd.isna(q) else f"{q:.2g}"
+            f.write(
+                f"{row['GO_Slim_ID']} | {row['GO_Slim_Term']} | "
+                f"T:{int(row['Target_Genes'])} ({row['Target_Percent']:.1f}%) | "
+                f"BG:{int(row['Background_Genes'])} ({row['Background_Percent']:.1f}%) | "
+                f"FC:{fc:.2g}× | p:{p_str} | FDR:{q_str}\\n"
+            )
+        f.write("\\n")
 
     f.write("Top 10 GO Slim Categories in Target (with Fisher p-values and BH FDR):\\n")
     f.write("-"*70 + "\\n")
@@ -217,8 +239,15 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
 print("GO Slim analysis complete (including p-values and FDR)")
 EOF
 
-  # 4. Plot A: BG multiplier (x-axis is multiplier), prefers FDR<=0.1; if none, shows top-N lowest FDR
+  # --- GRAPH-ONLY EXCLUSION ---
+  # Exclude this term ONLY from plots (does not affect counting/p-values/FDR in TSV)
+  # GO:0048856 = anatomical structure development
+  export PLOT_EXCLUDE_GOID="GO:0048856"
+
+  # 4. Plot A: BG multiplier on RAW scale (NOT log2), ONLY overrepresented (FC > 1)
+  #    Prefers FDR<=0.1; if none, shows top-N lowest FDR among overrepresented
   python3 << 'EOF'
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -228,50 +257,54 @@ try:
     if df_all.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    # Prefer strict set (FDR<=0.1)
-    df_sig = df_all[(df_all['FDR_BH'].notna()) & (df_all['FDR_BH'] <= 0.1)].copy()
+    # Exclude from plots only
+    ex = os.environ.get("PLOT_EXCLUDE_GOID", "").strip()
+    if ex:
+        df_all = df_all[df_all['GO_Slim_ID'] != ex].copy()
+
+    eps = 0.1
+    df_all['Fold_Change'] = (df_all['Target_Percent'] + eps) / (df_all['Background_Percent'] + eps)
+
+    # ONLY overrepresented: FC > 1
+    df_over = df_all[df_all['Fold_Change'] > 1.0].copy()
+    if df_over.empty:
+        raise ValueError("No overrepresented categories (Target% > Background%) to plot (after plot-only exclusions).")
+
+    # Prefer strict set (FDR<=0.1) within overrepresented
+    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
 
     fallback = False
     df = df_sig
     if df.empty:
-        # Fallback: show top N by FDR so you still get an informative plot
         fallback = True
-        df = df_all[df_all['FDR_BH'].notna()].copy()
+        df = df_over[df_over['FDR_BH'].notna()].copy()
         if df.empty:
-            raise ValueError("FDR_BH is missing for all categories.")
+            raise ValueError("FDR_BH is missing for all overrepresented categories.")
         df = df.sort_values('FDR_BH', ascending=True).head(20)
 
-    eps = 0.1
-    df['Fold_Change'] = (df['Target_Percent'] + eps) / (df['Background_Percent'] + eps)
-    df['Log2_FC'] = np.log2(df['Fold_Change'])
-
-    # Choose extremes by Log2_FC (within whichever set we’re plotting)
-    N = 10 if len(df) >= 20 else max(1, len(df)//2)
-    over_df = df.sort_values('Log2_FC', ascending=False).head(N)
-    under_df = df.sort_values('Log2_FC', ascending=True).head(N)
-
-    plot_df = pd.concat([under_df, over_df], axis=0).copy()
-    plot_df = plot_df.sort_values('Log2_FC').drop_duplicates(subset=['GO_Slim_ID'], keep='first')
-    plot_df = plot_df.sort_values('Log2_FC')
+    # Plot size limited to top N by Fold_Change (keeps plot readable)
+    N = 15
+    plot_df = df.sort_values('Fold_Change', ascending=False).head(N).copy()
+    plot_df = plot_df.sort_values('Fold_Change', ascending=True)
 
     fig, ax = plt.subplots(figsize=(12, 9))
     y_pos = range(len(plot_df))
-    ax.barh(y_pos, plot_df['Log2_FC'])
+    ax.barh(y_pos, plot_df['Fold_Change'])
 
     ax.set_yticks(list(y_pos))
     ax.set_yticklabels(plot_df['GO_Slim_Term'].astype(str).str.wrap(45))
 
-    ax.axvline(0, linewidth=1)
-    ax.set_xlabel('BG multiplier (log2(Target% / Background%))')
+    ax.axvline(1.0, linewidth=1)
+    ax.set_xlabel('BG multiplier (Target% / Background%)')
 
     if fallback:
-        ax.set_title('No terms pass FDR≤0.1; showing lowest-FDR terms: BG Multiplier - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.1; showing lowest-FDR overrepresented: BG Multiplier - ${sample_id}')
     else:
-        ax.set_title('Significant GO Slim Categories (FDR≤0.1): BG Multiplier - ${sample_id}')
+        ax.set_title('Overrepresented GO Slim Categories (FDR≤0.1): BG Multiplier - ${sample_id}')
 
-    tick_vals = np.array([-3, -2, -1, 0, 1, 2, 3], dtype=float)
-    ax.set_xticks(tick_vals)
-    ax.set_xticklabels([f"{2**v:g}×" for v in tick_vals])
+    # Reasonable multiplier ticks (will auto-scale if values exceed these)
+    ax.set_xticks([1, 1.5, 2, 3, 5])
+    ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'])
 
     for i, row in enumerate(plot_df.itertuples(index=False)):
         p = float(row.P_Value) if not pd.isna(row.P_Value) else np.nan
@@ -279,19 +312,19 @@ try:
         p_str = "NA" if np.isnan(p) else f"{p:.2g}"
         q_str = "NA" if np.isnan(q) else f"{q:.2g}"
         label = f"T:{row.Target_Percent:.1f}%  B:{row.Background_Percent:.1f}%  ({row.Fold_Change:.2g}× bg)  p:{p_str}  FDR:{q_str}"
-        ax.text(row.Log2_FC, i, "  " + label, va='center')
+        ax.text(row.Fold_Change, i, "  " + label, va='center')
 
     plt.tight_layout()
     plt.savefig("${sample_id}_goslim_plot_multiplier.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-    print("Multiplier plot created successfully")
+    print("Overrepresented multiplier plot created successfully")
 
 except Exception as e:
     print(f"Could not create multiplier plot: {e}")
 EOF
 
-  # 5. Plot B: volcano (ALL categories)
+  # 5. Plot B: volcano (ALL categories) -- unchanged
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -327,23 +360,38 @@ except Exception as e:
     print(f"Could not create volcano plot: {e}")
 EOF
 
-  # 6. Plot C: top by Target% (prefers FDR<=0.1; if none, shows top-N by Target%)
+  # 6. Plot C: top by Target% (ONLY overrepresented; prefers FDR<=0.1), also excludes GO:0048856 from plots
   python3 << 'EOF'
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 try:
     df_all = pd.read_csv("${sample_id}_goslim_categories.tsv", sep='\\t')
     if df_all.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    df_sig = df_all[(df_all['FDR_BH'].notna()) & (df_all['FDR_BH'] <= 0.1)].copy()
+    # Exclude from plots only
+    ex = os.environ.get("PLOT_EXCLUDE_GOID", "").strip()
+    if ex:
+        df_all = df_all[df_all['GO_Slim_ID'] != ex].copy()
+
+    eps = 0.1
+    df_all['Fold_Change'] = (df_all['Target_Percent'] + eps) / (df_all['Background_Percent'] + eps)
+
+    # Only overrepresented
+    df_over = df_all[df_all['Fold_Change'] > 1.0].copy()
+    if df_over.empty:
+        raise ValueError("No overrepresented categories (Target% > Background%) to plot (after plot-only exclusions).")
+
+    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
 
     fallback = False
     df = df_sig
     if df.empty:
         fallback = True
-        df = df_all.copy()
+        df = df_over.copy()
 
     top_n = 15
     top_df = df.sort_values('Target_Percent', ascending=False).head(top_n).copy()
@@ -360,9 +408,9 @@ try:
     ax.set_xlabel('Percentage of Genes (%)')
 
     if fallback:
-        ax.set_title('No terms pass FDR≤0.1; showing top by Target% - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.1; showing top overrepresented by Target% - ${sample_id}')
     else:
-        ax.set_title('Top Significant GO Slim Categories by Target% (FDR≤0.1) - ${sample_id}')
+        ax.set_title('Top Overrepresented GO Slim Categories by Target% (FDR≤0.1) - ${sample_id}')
 
     ax.legend()
 
@@ -370,7 +418,7 @@ try:
     plt.savefig("${sample_id}_goslim_plot_top_target.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-    print("Top Target% plot created successfully")
+    print("Top Target% (overrepresented) plot created successfully")
 
 except Exception as e:
     print(f"Could not create top-target plot: {e}")
