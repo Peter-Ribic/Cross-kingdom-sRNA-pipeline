@@ -17,36 +17,59 @@ process GOATOOLS_GOSLIM {
   set -euo pipefail
 
   wget -q https://current.geneontology.org/ontology/subsets/goslim_generic.obo -O plant_goslim.obo
-
-  # 2. Download full GO ontology
   wget -q http://purl.obolibrary.org/obo/go/go-basic.obo -O go-basic.obo
 
-  # 3. Run GOATOOLS goslim analysis + Fisher p-values + BH FDR per category
-  #    Base functionality preserved: mapping/counting logic unchanged.
+  # NOTE:
+  # Without an external gene/protein annotation source (UniProt/Ensembl/TAIR GFF/GTF, etc.)
+  # we cannot reliably attach "protein name/role" beyond GO-term-derived descriptions.
+  # The protein report produced below therefore includes:
+  # - gene/protein identifier from your input
+  # - all original GO terms for that identifier + GO term names (from go-basic.obo)
+  # - the GO-slim categories that identifier mapped to
+  # - which of the "top overrepresented categories" it belongs to
+
   python3 << 'EOF'
 import math
+import os
 import pandas as pd
-from collections import Counter
+from collections import Counter, defaultdict
 from goatools.base import get_godag
 
-# Load GO slim and full ontology
-godag = get_godag("go-basic.obo", optional_attrs={'relationship'})
-goslim = get_godag("plant_goslim.obo", optional_attrs={'relationship'})
+# -----------------------------
+# Config (keeps current behavior)
+# -----------------------------
+FDR_LIMIT = 0.1            # your current cutoff for "significant"
+TOP_PLOT_N = 15            # max categories shown in multiplier plot
+EPS_FC = 0.1               # pseudocount used for Fold_Change (Target%/Background%)
 
 # Root-ish terms to exclude from mapping/counting
 EXCLUDE_ROOTS = {'GO:0009987', 'GO:0005622', 'GO:0008152', 'GO:0005737'}
 
+# Exclude from plots only (does not affect counting/stats/table)
+PLOT_EXCLUDE_GOID = "GO:0048856"  # anatomical structure development
+
+# -----------------------------
+# Load ontologies
+# -----------------------------
+godag = get_godag("go-basic.obo", optional_attrs={'relationship'})
+goslim = get_godag("plant_goslim.obo", optional_attrs={'relationship'})
+
+# -----------------------------
+# Input parsing
+# -----------------------------
 def read_go_annotations(filename):
     annotations = {}
     with open(filename, 'r') as f:
         for line in f:
-            if line.strip():
-                parts = line.strip().split('\\t')
-                if len(parts) == 2:
-                    gene, go_term = parts
-                    if go_term in EXCLUDE_ROOTS:
-                        continue
-                    annotations.setdefault(gene, []).append(go_term)
+            if not line.strip():
+                continue
+            parts = line.rstrip("\\n").split('\\t')
+            if len(parts) != 2:
+                continue
+            gene, go_term = parts
+            if go_term in EXCLUDE_ROOTS:
+                continue
+            annotations.setdefault(gene, []).append(go_term)
     return annotations
 
 target_annotations = read_go_annotations("$target_go")
@@ -55,19 +78,24 @@ background_annotations = read_go_annotations("$background_go")
 print(f"Target genes: {len(target_annotations)}")
 print(f"Background genes: {len(background_annotations)}")
 
+# -----------------------------
+# Map to GO slim
+# -----------------------------
 def map_to_goslim(go_terms, goslim_dag):
     categories = set()
     for go_id in go_terms:
-        if go_id in godag:
-            go_term = godag[go_id]
-            if go_id in goslim_dag and go_id not in EXCLUDE_ROOTS:
-                categories.add(go_id)
-            for ancestor in go_term.get_all_parents():
-                if ancestor in goslim_dag and ancestor not in EXCLUDE_ROOTS:
-                    categories.add(ancestor)
+        if go_id not in godag:
+            continue
+        go_term = godag[go_id]
+        # direct slim term
+        if go_id in goslim_dag and go_id not in EXCLUDE_ROOTS:
+            categories.add(go_id)
+        # ancestors
+        for anc in go_term.get_all_parents():
+            if anc in goslim_dag and anc not in EXCLUDE_ROOTS:
+                categories.add(anc)
     return list(categories)
 
-# Classify each gene
 target_categories = {}
 for gene, go_terms in target_annotations.items():
     cats = map_to_goslim(go_terms, goslim)
@@ -80,7 +108,9 @@ for gene, go_terms in background_annotations.items():
     if cats:
         background_categories[gene] = cats
 
+# -----------------------------
 # Count categories (gene-level presence)
+# -----------------------------
 target_counts = Counter()
 for cats in target_categories.values():
     for cat in cats:
@@ -91,7 +121,9 @@ for cats in background_categories.values():
     for cat in cats:
         background_counts[cat] += 1
 
-# --- Fisher exact (two-sided) helpers (pure python) ---
+# -----------------------------
+# Fisher exact two-sided (pure python)
+# -----------------------------
 def log_comb(n, k):
     if k < 0 or k > n:
         return float('-inf')
@@ -140,7 +172,9 @@ def get_term_info(go_id):
         return {'id': go_id, 'name': term.name, 'namespace': term.namespace}
     return None
 
-# Build results
+# -----------------------------
+# Build results table
+# -----------------------------
 results = []
 T = len(target_annotations)
 B = len(background_annotations)
@@ -161,14 +195,19 @@ for go_id in all_ids:
     pval = fisher_exact_two_sided(a, b, c, d) if (T > 0 and B > 0) else None
     orat = odds_ratio(a, b, c, d) if (T > 0 and B > 0) else None
 
+    tp = (a / T * 100) if T else 0.0
+    bp = (c / B * 100) if B else 0.0
+    fc = (tp + EPS_FC) / (bp + EPS_FC)
+
     results.append({
         'GO_Slim_ID': go_id,
         'GO_Slim_Term': info['name'],
         'Category': info['namespace'],
         'Target_Genes': a,
         'Background_Genes': c,
-        'Target_Percent': (a / T * 100) if T else 0,
-        'Background_Percent': (c / B * 100) if B else 0,
+        'Target_Percent': tp,
+        'Background_Percent': bp,
+        'Fold_Change': fc,
         'Odds_Ratio': orat,
         'P_Value': pval,
     })
@@ -184,12 +223,150 @@ else:
 # Sort by Target_Genes (base behavior preserved)
 df = df.sort_values('Target_Genes', ascending=False)
 
-# Save full results (UNFILTERED)
+# Save full results
 df.to_csv("${sample_id}_goslim_categories.tsv", sep='\\t', index=False)
 
-# Summary: also log ALL categories with FDR<=0.1
-eps_fc = 0.1  # same pseudocount used in plots/summary FC calculations
+# -----------------------------
+# Decide "top overrepresented categories" (same logic as multiplier plot, but in Python here)
+# - plot-only exclusion applied
+# - only overrepresented: Fold_Change > 1
+# - prefer FDR<=limit, else fallback to lowest-FDR within overrepresented
+# - then cap to TOP_PLOT_N by Fold_Change
+# -----------------------------
+df_plot = df.copy()
+df_plot = df_plot[df_plot['GO_Slim_ID'] != PLOT_EXCLUDE_GOID].copy()
+df_over = df_plot[df_plot['Fold_Change'] > 1.0].copy()
 
+top_mode = "FDR"
+df_sig_over = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= FDR_LIMIT)].copy()
+
+if df_sig_over.empty:
+    top_mode = "FALLBACK_LOWEST_FDR"
+    df_pool = df_over[df_over['FDR_BH'].notna()].copy()
+    if df_pool.empty:
+        top_categories = pd.DataFrame(columns=df_plot.columns)
+    else:
+        df_pool = df_pool.sort_values('FDR_BH', ascending=True).head(20)
+        top_categories = df_pool.sort_values('Fold_Change', ascending=False).head(TOP_PLOT_N).copy()
+else:
+    top_categories = df_sig_over.sort_values('Fold_Change', ascending=False).head(TOP_PLOT_N).copy()
+
+top_category_ids = top_categories['GO_Slim_ID'].tolist()
+
+# -----------------------------
+# Protein/gene report for top categories
+# -----------------------------
+# Invert mapping: category -> list of genes in TARGET
+cat_to_genes = defaultdict(list)
+for gene, cats in target_categories.items():
+    for cat in cats:
+        cat_to_genes[cat].append(gene)
+
+def go_name(go_id: str) -> str:
+    if go_id in godag:
+        return godag[go_id].name
+    return ""
+
+rows = []
+for go_id in top_category_ids:
+    cat_info = df.loc[df['GO_Slim_ID'] == go_id].head(1)
+    if cat_info.empty:
+        continue
+    cat_term = cat_info['GO_Slim_Term'].iloc[0]
+    cat_ns = cat_info['Category'].iloc[0]
+    cat_fc = float(cat_info['Fold_Change'].iloc[0])
+    cat_fdr = cat_info['FDR_BH'].iloc[0]
+    cat_p = cat_info['P_Value'].iloc[0]
+    cat_t = int(cat_info['Target_Genes'].iloc[0])
+    cat_b = int(cat_info['Background_Genes'].iloc[0])
+
+    genes = sorted(set(cat_to_genes.get(go_id, [])))
+    for gene in genes:
+        orig_gos = target_annotations.get(gene, [])
+        orig_go_names = [go_name(g) for g in orig_gos]
+        mapped_slims = sorted(set(target_categories.get(gene, [])))
+        mapped_slim_names = [go_name(g) for g in mapped_slims]
+
+        rows.append({
+            'Top_Category_Mode': top_mode,
+            'Top_GO_Slim_ID': go_id,
+            'Top_GO_Slim_Term': cat_term,
+            'Top_GO_Slim_Namespace': cat_ns,
+            'Top_Category_Target_Genes': cat_t,
+            'Top_Category_Background_Genes': cat_b,
+            'Top_Category_Fold_Change': cat_fc,
+            'Top_Category_P_Value': cat_p,
+            'Top_Category_FDR_BH': cat_fdr,
+            'Gene_or_Protein_ID': gene,
+            'Original_GO_Terms': ";".join(orig_gos),
+            'Original_GO_Term_Names': ";".join([n for n in orig_go_names if n]),
+            'Mapped_GO_Slim_Terms': ";".join(mapped_slims),
+            'Mapped_GO_Slim_Term_Names': ";".join([n for n in mapped_slim_names if n]),
+        })
+
+prot_df = pd.DataFrame(rows)
+prot_tsv = "${sample_id}_top_overrepresented_proteins.tsv"
+prot_txt = "${sample_id}_top_overrepresented_proteins.txt"
+
+prot_df.to_csv(prot_tsv, sep='\\t', index=False)
+
+with open(prot_txt, "w") as f:
+    f.write(f"Top overrepresented GO-slim categories (used for multiplier plot) - ${sample_id}\\n")
+    f.write("="*90 + "\\n")
+    f.write(f"Selection mode: {top_mode}\\n")
+    f.write(f"FDR limit: {FDR_LIMIT}\\n")
+    f.write(f"Plot-only excluded GO ID: {PLOT_EXCLUDE_GOID}\\n")
+    f.write(f"Overrepresented definition: Fold_Change = (Target%+{EPS_FC})/(Background%+{EPS_FC}) > 1\\n")
+    f.write(f"Max categories listed: {TOP_PLOT_N}\\n\\n")
+
+    if top_categories.empty:
+        f.write("No overrepresented categories available for reporting.\\n")
+    else:
+        f.write("Top categories:\\n")
+        for _, r in top_categories.sort_values('Fold_Change', ascending=False).iterrows():
+            p = r['P_Value']
+            q = r['FDR_BH']
+            p_str = "NA" if pd.isna(p) else f"{p:.2g}"
+            q_str = "NA" if pd.isna(q) else f"{q:.2g}"
+            f.write(f"- {r['GO_Slim_ID']} | {r['GO_Slim_Term']} | FC:{r['Fold_Change']:.2g}× | p:{p_str} | FDR:{q_str}\\n")
+        f.write("\\n")
+
+    f.write("Per-category gene/protein IDs and GO-derived details:\\n")
+    f.write("-"*90 + "\\n\\n")
+
+    if prot_df.empty:
+        f.write("No genes mapped to the selected top categories.\\n")
+    else:
+        for go_id in top_category_ids:
+            block = prot_df[prot_df['Top_GO_Slim_ID'] == go_id].copy()
+            if block.empty:
+                continue
+            cat_term = block['Top_GO_Slim_Term'].iloc[0]
+            fc = float(block['Top_Category_Fold_Change'].iloc[0])
+            p = block['Top_Category_P_Value'].iloc[0]
+            q = block['Top_Category_FDR_BH'].iloc[0]
+            p_str = "NA" if pd.isna(p) else f"{p:.2g}"
+            q_str = "NA" if pd.isna(q) else f"{q:.2g}"
+
+            f.write(f"{go_id} - {cat_term}\\n")
+            f.write(f"  Fold-change: {fc:.2g}×   p: {p_str}   FDR: {q_str}\\n")
+            f.write(f"  Genes/proteins ({len(block)}):\\n")
+
+            for _, rr in block.sort_values('Gene_or_Protein_ID').iterrows():
+                f.write(f"    - {rr['Gene_or_Protein_ID']}\\n")
+                if rr['Original_GO_Terms']:
+                    f.write(f"      Original GO: {rr['Original_GO_Terms']}\\n")
+                if rr['Original_GO_Term_Names']:
+                    f.write(f"      Original GO names: {rr['Original_GO_Term_Names']}\\n")
+                if rr['Mapped_GO_Slim_Terms']:
+                    f.write(f"      Mapped slim: {rr['Mapped_GO_Slim_Terms']}\\n")
+                if rr['Mapped_GO_Slim_Term_Names']:
+                    f.write(f"      Mapped slim names: {rr['Mapped_GO_Slim_Term_Names']}\\n")
+            f.write("\\n")
+
+# -----------------------------
+# Summary: log ALL categories with FDR<=0.1
+# -----------------------------
 with open("${sample_id}_goslim_summary.txt", 'w') as f:
     f.write(f"Plant GO Slim Analysis - ${sample_id}\\n")
     f.write("="*60 + "\\n\\n")
@@ -197,17 +374,16 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
     f.write(f"Background genes with GO slim annotations: {len(background_categories)}/{len(background_annotations)} ({(len(background_categories)/len(background_annotations)*100) if len(background_annotations) else 0:.1f}%)\\n")
     f.write(f"Unique GO slim categories found: {len(df)} (root terms excluded)\\n\\n")
 
-    sig = df[(df['FDR_BH'].notna()) & (df['FDR_BH'] <= 0.1)].copy()
-    f.write(f"Significant categories (FDR_BH<=0.1): {len(sig)}/{len(df)}\\n\\n")
+    sig = df[(df['FDR_BH'].notna()) & (df['FDR_BH'] <= FDR_LIMIT)].copy()
+    f.write(f"Significant categories (FDR_BH<={FDR_LIMIT}): {len(sig)}/{len(df)}\\n\\n")
 
-    f.write("All categories with FDR_BH <= 0.1 (sorted by FDR):\\n")
-    f.write("-"*90 + "\\n")
+    f.write(f"All categories with FDR_BH <= {FDR_LIMIT} (sorted by FDR):\\n")
+    f.write("-"*100 + "\\n")
     if sig.empty:
         f.write("  None\\n\\n")
     else:
         sig = sig.sort_values('FDR_BH', ascending=True)
         for _, row in sig.iterrows():
-            fc = (float(row['Target_Percent']) + eps_fc) / (float(row['Background_Percent']) + eps_fc)
             p = row.get('P_Value', None)
             q = row.get('FDR_BH', None)
             p_str = "NA" if pd.isna(p) else f"{p:.2g}"
@@ -216,7 +392,7 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
                 f"{row['GO_Slim_ID']} | {row['GO_Slim_Term']} | "
                 f"T:{int(row['Target_Genes'])} ({row['Target_Percent']:.1f}%) | "
                 f"BG:{int(row['Background_Genes'])} ({row['Background_Percent']:.1f}%) | "
-                f"FC:{fc:.2g}× | p:{p_str} | FDR:{q_str}\\n"
+                f"FC:{row['Fold_Change']:.2g}× | p:{p_str} | FDR:{q_str}\\n"
             )
         f.write("\\n")
 
@@ -236,41 +412,28 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
         f.write(f"  Background: {int(row['Background_Genes'])} genes ({row['Background_Percent']:.1f}%)\\n")
         f.write(f"  OddsRatio: {or_str}  p: {p_str}  FDR_BH: {q_str}\\n\\n")
 
-print("GO Slim analysis complete (including p-values and FDR)")
+print("GO Slim analysis complete (including p-values, FDR, and top-category protein report)")
 EOF
 
-  # --- GRAPH-ONLY EXCLUSION ---
-  # Exclude this term ONLY from plots (does not affect counting/p-values/FDR in TSV)
-  # GO:0048856 = anatomical structure development
-  export PLOT_EXCLUDE_GOID="GO:0048856"
-
-  # 4. Plot A: BG multiplier on RAW scale (NOT log2), ONLY overrepresented (FC > 1)
-  #    Prefers FDR<=0.1; if none, shows top-N lowest FDR among overrepresented
+  # 4. Multiplier plot (RAW FC, not log2) - ONLY overrepresented - excludes GO:0048856 from plots
   python3 << 'EOF'
-import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 
 try:
     df_all = pd.read_csv("${sample_id}_goslim_categories.tsv", sep='\\t')
     if df_all.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    # Exclude from plots only
-    ex = os.environ.get("PLOT_EXCLUDE_GOID", "").strip()
-    if ex:
-        df_all = df_all[df_all['GO_Slim_ID'] != ex].copy()
+    # Plot-only exclusion
+    df_all = df_all[df_all['GO_Slim_ID'] != "GO:0048856"].copy()
 
-    eps = 0.1
-    df_all['Fold_Change'] = (df_all['Target_Percent'] + eps) / (df_all['Background_Percent'] + eps)
-
-    # ONLY overrepresented: FC > 1
+    # Only overrepresented (Fold_Change already computed in TSV)
     df_over = df_all[df_all['Fold_Change'] > 1.0].copy()
     if df_over.empty:
-        raise ValueError("No overrepresented categories (Target% > Background%) to plot (after plot-only exclusions).")
+        raise ValueError("No overrepresented categories (Fold_Change > 1) to plot.")
 
-    # Prefer strict set (FDR<=0.1) within overrepresented
+    # Prefer FDR<=0.1 within overrepresented
     df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
 
     fallback = False
@@ -282,9 +445,8 @@ try:
             raise ValueError("FDR_BH is missing for all overrepresented categories.")
         df = df.sort_values('FDR_BH', ascending=True).head(20)
 
-    # Plot size limited to top N by Fold_Change (keeps plot readable)
-    N = 15
-    plot_df = df.sort_values('Fold_Change', ascending=False).head(N).copy()
+    # Plot capped to top 15 by Fold_Change for readability
+    plot_df = df.sort_values('Fold_Change', ascending=False).head(15).copy()
     plot_df = plot_df.sort_values('Fold_Change', ascending=True)
 
     fig, ax = plt.subplots(figsize=(12, 9))
@@ -298,19 +460,19 @@ try:
     ax.set_xlabel('BG multiplier (Target% / Background%)')
 
     if fallback:
-        ax.set_title('No overrepresented terms pass FDR≤0.1; showing lowest-FDR overrepresented: BG Multiplier - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.1; showing lowest-FDR overrepresented - ${sample_id}')
     else:
         ax.set_title('Overrepresented GO Slim Categories (FDR≤0.1): BG Multiplier - ${sample_id}')
 
-    # Reasonable multiplier ticks (will auto-scale if values exceed these)
     ax.set_xticks([1, 1.5, 2, 3, 5])
     ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'])
 
+    # annotate
     for i, row in enumerate(plot_df.itertuples(index=False)):
-        p = float(row.P_Value) if not pd.isna(row.P_Value) else np.nan
-        q = float(row.FDR_BH) if not pd.isna(row.FDR_BH) else np.nan
-        p_str = "NA" if np.isnan(p) else f"{p:.2g}"
-        q_str = "NA" if np.isnan(q) else f"{q:.2g}"
+        p = row.P_Value
+        q = row.FDR_BH
+        p_str = "NA" if pd.isna(p) else f"{p:.2g}"
+        q_str = "NA" if pd.isna(q) else f"{q:.2g}"
         label = f"T:{row.Target_Percent:.1f}%  B:{row.Background_Percent:.1f}%  ({row.Fold_Change:.2g}× bg)  p:{p_str}  FDR:{q_str}"
         ax.text(row.Fold_Change, i, "  " + label, va='center')
 
@@ -319,12 +481,11 @@ try:
     plt.close()
 
     print("Overrepresented multiplier plot created successfully")
-
 except Exception as e:
     print(f"Could not create multiplier plot: {e}")
 EOF
 
-  # 5. Plot B: volcano (ALL categories) -- unchanged
+  # 5. Volcano plot (ALL categories) - unchanged
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -335,10 +496,8 @@ try:
     if df.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    eps = 0.1
-    df['Fold_Change'] = (df['Target_Percent'] + eps) / (df['Background_Percent'] + eps)
-    df['Log2_FC'] = np.log2(df['Fold_Change'])
-
+    # volcano uses log2 FC for the scatter (standard), FC already in table
+    df['Log2_FC'] = np.log2(df['Fold_Change'].astype(float).clip(lower=1e-300))
     p = df['P_Value'].astype(float).fillna(1.0).clip(lower=1e-300)
     df['NegLog10P'] = -np.log10(p)
 
@@ -355,35 +514,25 @@ try:
     plt.close()
 
     print("Volcano plot created successfully")
-
 except Exception as e:
     print(f"Could not create volcano plot: {e}")
 EOF
 
-  # 6. Plot C: top by Target% (ONLY overrepresented; prefers FDR<=0.1), also excludes GO:0048856 from plots
+  # 6. Top-by-Target% plot (ONLY overrepresented), excludes GO:0048856 from plots
   python3 << 'EOF'
-import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
 
 try:
     df_all = pd.read_csv("${sample_id}_goslim_categories.tsv", sep='\\t')
     if df_all.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    # Exclude from plots only
-    ex = os.environ.get("PLOT_EXCLUDE_GOID", "").strip()
-    if ex:
-        df_all = df_all[df_all['GO_Slim_ID'] != ex].copy()
+    df_all = df_all[df_all['GO_Slim_ID'] != "GO:0048856"].copy()
 
-    eps = 0.1
-    df_all['Fold_Change'] = (df_all['Target_Percent'] + eps) / (df_all['Background_Percent'] + eps)
-
-    # Only overrepresented
     df_over = df_all[df_all['Fold_Change'] > 1.0].copy()
     if df_over.empty:
-        raise ValueError("No overrepresented categories (Target% > Background%) to plot (after plot-only exclusions).")
+        raise ValueError("No overrepresented categories (Fold_Change > 1) to plot.")
 
     df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
 
@@ -393,8 +542,7 @@ try:
         fallback = True
         df = df_over.copy()
 
-    top_n = 15
-    top_df = df.sort_values('Target_Percent', ascending=False).head(top_n).copy()
+    top_df = df.sort_values('Target_Percent', ascending=False).head(15).copy()
     top_df = top_df.iloc[::-1]
 
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -419,7 +567,6 @@ try:
     plt.close()
 
     print("Top Target% (overrepresented) plot created successfully")
-
 except Exception as e:
     print(f"Could not create top-target plot: {e}")
 EOF
