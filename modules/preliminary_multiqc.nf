@@ -1,7 +1,7 @@
 process PRELIMINARY_MULTIQC {
     tag "$output_name"
     container "quay.io/biocontainers/multiqc:1.32--pyhdfd78af_0"
-    publishDir "results/multiqc/preliminary", mode: 'symlink'
+    publishDir "results/multiqc/${output_name}", mode: 'symlink'
 
     input:
     val output_name
