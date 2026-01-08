@@ -13,7 +13,8 @@ process FILTER_SRNA_LENGTH {
     output:
     tuple val(sample_id), path("${sample_id}_20_22nt.fq.gz"), emit: filtered_reads
     tuple val(sample_id), path("${sample_id}_length_distribution.tsv"), emit: length_distribution
-
+    path "${task.process}_${sample_id}.tsv", emit: log_info
+    
     script:
     """
     echo "Processing sample: ${sample_id}"
@@ -24,6 +25,9 @@ process FILTER_SRNA_LENGTH {
 
     echo "Filtering reads between 20 and 22 nt..."
     seqkit seq -m 20 -M 24 ${reads} | gzip > ${sample_id}_20_22nt.fq.gz
+
+    num_outputed_reads=\$(zcat ${sample_id}_20_22nt.fq.gz | awk 'END{print NR/4}')
+    echo -e "${task.process}\\t${sample_id}\\t\$num_outputed_reads" >> ${task.process}_${sample_id}.tsv
 
     echo "- ${sample_id}_20_22nt.fq.gz"
     echo "- ${sample_id}_length_distribution.tsv"

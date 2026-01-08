@@ -11,6 +11,7 @@ process KEEP_TREATED_ONLY {
     output:
     tuple val(sample_id), path("${sample_id}_treated_only.fq.gz"), emit: filtered_reads
     path("${sample_id}_treated_minus_control.tsv"), emit: log
+    path "${task.process}_${sample_id}.tsv", emit: log_info
 
     script:
     """
@@ -49,6 +50,8 @@ process KEEP_TREATED_ONLY {
 
     # Compress filtered reads
     gzip -c '${sample_id}_treated_only.fq' > ${sample_id}_treated_only.fq.gz
-    rm '${sample_id}_treated_only.fq'
+
+    num_sequences=\$(awk 'END{print NR/4}' ${sample_id}_treated_only.fq)
+    echo -e "${task.process}\\t${sample_id}\\t\$num_sequences" > ${task.process}_${sample_id}.tsv
     """
 }

@@ -10,6 +10,7 @@ process BOWTIE_ALIGN_TO_VIRUSES {
     output:
     tuple val(sample_id), path(reads), path("${sample_id}_viruses_0mm.sam"), emit: results
     path("${sample_id}_viruses_0mm.log"), emit: log
+    path "${task.process}_${sample_id}.tsv", emit: log_info
 
     script:
     """
@@ -21,5 +22,8 @@ process BOWTIE_ALIGN_TO_VIRUSES {
         -x viruses_index \
         -U ${reads} \
         -S ${sample_id}_viruses_0mm.sam 2> ${sample_id}_viruses_0mm.log   
+
+    total_aligned_records=\$(grep -vc "^@" ${sample_id}_viruses_0mm.sam)
+    echo -e "${task.process}\\t${sample_id}\\t\$total_aligned_records" > ${task.process}_${sample_id}.tsv
  """
 }
