@@ -14,7 +14,7 @@ process ANNOTATE_TARGETS {
     path("${sample_id}_defense_targets.txt"), emit: defense_targets
     path("${sample_id}_summary.txt"), emit: summary
     path("${sample_id}_enrichment_analysis.txt"), emit: enrichment_results
-    tuple val(sample_id),path("${sample_id}_targets_proteins.faa"), path("${sample_id}_transcriptome_proteins.faa"), emit: fastas
+    tuple val(sample_id), path("${sample_id}_targets_proteins.faa"), path("${sample_id}_transcriptome_proteins.faa"), emit: fastas
 
     script:
     """
@@ -114,19 +114,55 @@ process ANNOTATE_TARGETS {
     }
 
     ######################################################################
-    # NEW 2c) Build protein FASTA for (a) targets and (b) whole transcriptome
+    # 2c) Build protein FASTA for (a) targets and (b) whole transcriptome
     # Uses NCBI efetch -db protein
+    #
+    # CHANGE REQUEST: targets_proteins.faa headers should be "id_proteinname"
+    # (transcriptome_proteins.faa remains ">id" only)
     ######################################################################
-    # (b) whole transcriptome protein_id list from mrna_fasta map
     cut -f1 ${sample_id}_mrna_proteinid_map.tsv | sort -u > ${sample_id}_transcriptome_protein_ids.txt
     n_bg_ids=\$(wc -l < ${sample_id}_transcriptome_protein_ids.txt || echo "0")
 
-    # (a) target protein IDs: keep only accessions that look like protein IDs and/or appear in protein_id map
-    # (We exclude XM_ because those are transcripts)
     grep -v '^XM_' ${sample_id}_target_accessions.txt | sort -u > ${sample_id}_targets_protein_ids.txt
     n_tgt_ids=\$(wc -l < ${sample_id}_targets_protein_ids.txt || echo "0")
 
-    fetch_fasta_batch() {
+    fetch_fasta_batch_targets() {
+      local ids_file="\$1"
+      local out_faa="\$2"
+
+      : > "\$out_faa"
+      split -l 200 "\$ids_file" "\${out_faa}.chunk_" || true
+
+      for chunk in \${out_faa}.chunk_*; do
+        [[ -s "\$chunk" ]] || continue
+        ids=\$(paste -sd, "\$chunk")
+
+        efetch -db protein -id "\$ids" -format fasta \\
+          | awk '
+              /^>/{
+                sub(/^>/, "", \$0)
+
+                split(\$0, a, /[ \\t]/)
+                id=a[1]
+
+                desc=\$0
+                sub(/^[^ \\t]+[ \\t]*/, "", desc)
+
+                gsub(/[ \\t]+/, "_", desc)
+                gsub(/[^A-Za-z0-9_.-]/, "", desc)
+
+                if (desc != "") print ">" id "_" desc
+                else            print ">" id
+                next
+              }
+              { print }
+            ' >> "\$out_faa"
+      done
+
+      rm -f "\${out_faa}.chunk_"* 2>/dev/null || true
+    }
+
+    fetch_fasta_batch_plain() {
       local ids_file="\$1"
       local out_faa="\$2"
 
@@ -142,27 +178,26 @@ process ANNOTATE_TARGETS {
               /^>/{
                 sub(/^>/, "", \$0)
                 split(\$0, a, /[ \\t]/)
-                print ">"a[1]
+                print ">" a[1]
                 next
               }
               { print }
             ' >> "\$out_faa"
       done
 
-      # Cleanup chunk files
       rm -f "\${out_faa}.chunk_"* 2>/dev/null || true
     }
 
-    # Fetch FASTA for targets
+    # Fetch FASTA for targets (id_proteinname)
     if [[ "\$n_tgt_ids" -gt 0 ]]; then
-      fetch_fasta_batch ${sample_id}_targets_protein_ids.txt ${sample_id}_targets_proteins.faa
+      fetch_fasta_batch_targets ${sample_id}_targets_protein_ids.txt ${sample_id}_targets_proteins.faa
     else
       : > ${sample_id}_targets_proteins.faa
     fi
 
-    # Fetch FASTA for whole transcriptome
+    # Fetch FASTA for whole transcriptome (id only)
     if [[ "\$n_bg_ids" -gt 0 ]]; then
-      fetch_fasta_batch ${sample_id}_transcriptome_protein_ids.txt ${sample_id}_transcriptome_proteins.faa
+      fetch_fasta_batch_plain ${sample_id}_transcriptome_protein_ids.txt ${sample_id}_transcriptome_proteins.faa
     else
       : > ${sample_id}_transcriptome_proteins.faa
     fi
