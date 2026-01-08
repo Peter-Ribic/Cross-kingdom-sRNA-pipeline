@@ -21,42 +21,25 @@ process GOATOOLS_GOSLIM {
 
   # NOTE:
   # Without an external gene/protein annotation source (UniProt/Ensembl/TAIR GFF/GTF, etc.)
-  # we cannot reliably attach "protein name/role" beyond GO-term-derived descriptions.
-  # The protein report produced below therefore includes:
-  # - gene/protein identifier from your input
-  # - all original GO terms for that identifier + GO term names (from go-basic.obo)
-  # - the GO-slim categories that identifier mapped to
-  # - which of the "top overrepresented categories" it belongs to
+  # we cannot reliably attach true "protein name/role" beyond GO-term-derived descriptions.
+  # The protein report produced includes GO-derived details.
 
   python3 << 'EOF'
 import math
-import os
 import pandas as pd
 from collections import Counter, defaultdict
 from goatools.base import get_godag
 
-# -----------------------------
-# Config (keeps current behavior)
-# -----------------------------
-FDR_LIMIT = 0.1            # your current cutoff for "significant"
-TOP_PLOT_N = 15            # max categories shown in multiplier plot
-EPS_FC = 0.1               # pseudocount used for Fold_Change (Target%/Background%)
+FDR_LIMIT = 0.1
+TOP_PLOT_N = 15
+EPS_FC = 0.1
 
-# Root-ish terms to exclude from mapping/counting
 EXCLUDE_ROOTS = {'GO:0009987', 'GO:0005622', 'GO:0008152', 'GO:0005737'}
+PLOT_EXCLUDE_GOID = "GO:0048856"  # anatomical structure development (plots only)
 
-# Exclude from plots only (does not affect counting/stats/table)
-PLOT_EXCLUDE_GOID = "GO:0048856"  # anatomical structure development
-
-# -----------------------------
-# Load ontologies
-# -----------------------------
 godag = get_godag("go-basic.obo", optional_attrs={'relationship'})
 goslim = get_godag("plant_goslim.obo", optional_attrs={'relationship'})
 
-# -----------------------------
-# Input parsing
-# -----------------------------
 def read_go_annotations(filename):
     annotations = {}
     with open(filename, 'r') as f:
@@ -78,19 +61,14 @@ background_annotations = read_go_annotations("$background_go")
 print(f"Target genes: {len(target_annotations)}")
 print(f"Background genes: {len(background_annotations)}")
 
-# -----------------------------
-# Map to GO slim
-# -----------------------------
 def map_to_goslim(go_terms, goslim_dag):
     categories = set()
     for go_id in go_terms:
         if go_id not in godag:
             continue
         go_term = godag[go_id]
-        # direct slim term
         if go_id in goslim_dag and go_id not in EXCLUDE_ROOTS:
             categories.add(go_id)
-        # ancestors
         for anc in go_term.get_all_parents():
             if anc in goslim_dag and anc not in EXCLUDE_ROOTS:
                 categories.add(anc)
@@ -108,9 +86,6 @@ for gene, go_terms in background_annotations.items():
     if cats:
         background_categories[gene] = cats
 
-# -----------------------------
-# Count categories (gene-level presence)
-# -----------------------------
 target_counts = Counter()
 for cats in target_categories.values():
     for cat in cats:
@@ -121,9 +96,7 @@ for cats in background_categories.values():
     for cat in cats:
         background_counts[cat] += 1
 
-# -----------------------------
-# Fisher exact two-sided (pure python)
-# -----------------------------
+# Fisher exact helpers
 def log_comb(n, k):
     if k < 0 or k > n:
         return float('-inf')
@@ -137,10 +110,8 @@ def fisher_exact_two_sided(a, b, c, d):
     c1 = a + c
     c2 = b + d
     n = a + b + c + d
-
     amin = max(0, r1 - c2)
     amax = min(r1, c1)
-
     p_obs = hypergeom_p(a, r1, c1, n)
     p = 0.0
     for a2 in range(amin, amax + 1):
@@ -150,7 +121,6 @@ def fisher_exact_two_sided(a, b, c, d):
     return min(p, 1.0)
 
 def odds_ratio(a, b, c, d):
-    # Haldane–Anscombe correction for stability with zeros
     aa, bb, cc, dd = a + 0.5, b + 0.5, c + 0.5, d + 0.5
     return (aa * dd) / (bb * cc)
 
@@ -172,9 +142,6 @@ def get_term_info(go_id):
         return {'id': go_id, 'name': term.name, 'namespace': term.namespace}
     return None
 
-# -----------------------------
-# Build results table
-# -----------------------------
 results = []
 T = len(target_annotations)
 B = len(background_annotations)
@@ -214,27 +181,16 @@ for go_id in all_ids:
 
 df = pd.DataFrame(results)
 
-# BH FDR
 if not df.empty and 'P_Value' in df.columns:
     df['FDR_BH'] = bh_fdr(df['P_Value'].tolist())
 else:
     df['FDR_BH'] = []
 
-# Sort by Target_Genes (base behavior preserved)
 df = df.sort_values('Target_Genes', ascending=False)
-
-# Save full results
 df.to_csv("${sample_id}_goslim_categories.tsv", sep='\\t', index=False)
 
-# -----------------------------
-# Decide "top overrepresented categories" (same logic as multiplier plot, but in Python here)
-# - plot-only exclusion applied
-# - only overrepresented: Fold_Change > 1
-# - prefer FDR<=limit, else fallback to lowest-FDR within overrepresented
-# - then cap to TOP_PLOT_N by Fold_Change
-# -----------------------------
-df_plot = df.copy()
-df_plot = df_plot[df_plot['GO_Slim_ID'] != PLOT_EXCLUDE_GOID].copy()
+# Top categories used for protein report (same selection logic as multiplier plot)
+df_plot = df[df['GO_Slim_ID'] != PLOT_EXCLUDE_GOID].copy()
 df_over = df_plot[df_plot['Fold_Change'] > 1.0].copy()
 
 top_mode = "FDR"
@@ -253,10 +209,7 @@ else:
 
 top_category_ids = top_categories['GO_Slim_ID'].tolist()
 
-# -----------------------------
-# Protein/gene report for top categories
-# -----------------------------
-# Invert mapping: category -> list of genes in TARGET
+# Protein/gene report
 cat_to_genes = defaultdict(list)
 for gene, cats in target_categories.items():
     for cat in cats:
@@ -305,12 +258,9 @@ for go_id in top_category_ids:
         })
 
 prot_df = pd.DataFrame(rows)
-prot_tsv = "${sample_id}_top_overrepresented_proteins.tsv"
-prot_txt = "${sample_id}_top_overrepresented_proteins.txt"
+prot_df.to_csv("${sample_id}_top_overrepresented_proteins.tsv", sep='\\t', index=False)
 
-prot_df.to_csv(prot_tsv, sep='\\t', index=False)
-
-with open(prot_txt, "w") as f:
+with open("${sample_id}_top_overrepresented_proteins.txt", "w") as f:
     f.write(f"Top overrepresented GO-slim categories (used for multiplier plot) - ${sample_id}\\n")
     f.write("="*90 + "\\n")
     f.write(f"Selection mode: {top_mode}\\n")
@@ -364,9 +314,7 @@ with open(prot_txt, "w") as f:
                     f.write(f"      Mapped slim names: {rr['Mapped_GO_Slim_Term_Names']}\\n")
             f.write("\\n")
 
-# -----------------------------
-# Summary: log ALL categories with FDR<=0.1
-# -----------------------------
+# Summary
 with open("${sample_id}_goslim_summary.txt", 'w') as f:
     f.write(f"Plant GO Slim Analysis - ${sample_id}\\n")
     f.write("="*60 + "\\n\\n")
@@ -415,7 +363,7 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
 print("GO Slim analysis complete (including p-values, FDR, and top-category protein report)")
 EOF
 
-  # 4. Multiplier plot (RAW FC, not log2) - ONLY overrepresented - excludes GO:0048856 from plots
+  # 4. Multiplier plot (RAW FC) - ONLY overrepresented - excludes GO:0048856 from plots
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -425,15 +373,12 @@ try:
     if df_all.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    # Plot-only exclusion
     df_all = df_all[df_all['GO_Slim_ID'] != "GO:0048856"].copy()
 
-    # Only overrepresented (Fold_Change already computed in TSV)
     df_over = df_all[df_all['Fold_Change'] > 1.0].copy()
     if df_over.empty:
         raise ValueError("No overrepresented categories (Fold_Change > 1) to plot.")
 
-    # Prefer FDR<=0.1 within overrepresented
     df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
 
     fallback = False
@@ -445,7 +390,6 @@ try:
             raise ValueError("FDR_BH is missing for all overrepresented categories.")
         df = df.sort_values('FDR_BH', ascending=True).head(20)
 
-    # Plot capped to top 15 by Fold_Change for readability
     plot_df = df.sort_values('Fold_Change', ascending=False).head(15).copy()
     plot_df = plot_df.sort_values('Fold_Change', ascending=True)
 
@@ -467,7 +411,6 @@ try:
     ax.set_xticks([1, 1.5, 2, 3, 5])
     ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'])
 
-    # annotate
     for i, row in enumerate(plot_df.itertuples(index=False)):
         p = row.P_Value
         q = row.FDR_BH
@@ -485,7 +428,7 @@ except Exception as e:
     print(f"Could not create multiplier plot: {e}")
 EOF
 
-  # 5. Volcano plot (ALL categories) - unchanged
+  # 5. Dot plot (volcano): annotate each dot with category name
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -496,24 +439,33 @@ try:
     if df.empty:
         raise ValueError("No categories found in TSV (empty dataframe).")
 
-    # volcano uses log2 FC for the scatter (standard), FC already in table
+    df = df.copy()
     df['Log2_FC'] = np.log2(df['Fold_Change'].astype(float).clip(lower=1e-300))
     p = df['P_Value'].astype(float).fillna(1.0).clip(lower=1e-300)
     df['NegLog10P'] = -np.log10(p)
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots(figsize=(10, 9))
     ax.scatter(df['Log2_FC'], df['NegLog10P'], alpha=0.7)
     ax.axvline(0, linewidth=1)
 
+    # Annotate: for readability, annotate only the most "extreme" points
+    # (otherwise this plot becomes unreadable with many categories).
+    # We'll label: top 30 by -log10(p) + |log2FC|
+    df['LabelScore'] = df['NegLog10P'] + df['Log2_FC'].abs()
+    label_df = df.sort_values('LabelScore', ascending=False).head(30)
+
+    for _, r in label_df.iterrows():
+        ax.text(float(r['Log2_FC']), float(r['NegLog10P']), " " + str(r['GO_Slim_Term']), fontsize=7)
+
     ax.set_xlabel('log2(Target% / Background%)')
     ax.set_ylabel('-log10(p-value)')
-    ax.set_title('GO Slim Volcano: Enrichment vs Significance - ${sample_id}')
+    ax.set_title('GO Slim Volcano (Dot Plot): Enrichment vs Significance - ${sample_id}')
 
     plt.tight_layout()
     plt.savefig("${sample_id}_goslim_plot_volcano.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-    print("Volcano plot created successfully")
+    print("Volcano (dot) plot with labels created successfully")
 except Exception as e:
     print(f"Could not create volcano plot: {e}")
 EOF

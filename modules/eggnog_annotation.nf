@@ -21,7 +21,7 @@ process EGGNOG_ANNOTATION {
         -m diamond \
         --cpu ${task.cpus} \
         --itype proteins \
-        --go_evidence non-electronic \
+        --go_evidence all \
         --tax_scope 33090 \
         --target_taxa 33090
 
@@ -33,7 +33,7 @@ process EGGNOG_ANNOTATION {
         -m diamond \
         --cpu ${task.cpus} \
         --itype proteins \
-        --go_evidence non-electronic \
+        --go_evidence all \
         --tax_scope 33090 \
         --target_taxa 33090
 

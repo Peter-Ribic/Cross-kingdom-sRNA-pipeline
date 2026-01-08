@@ -22,7 +22,6 @@ include { BOWTIE_BUILD_PATHOGEN } from './modules/bowtie_build_pathogen.nf'
 include { FILTER_PATHOGEN_READS } from './modules/filter_pathogen_reads.nf'
 include { BOWTIE_BUILD_HOST } from './modules/bowtie_build_host.nf'
 include { LIST_PATHOGEN_READS } from './modules/list_pathogen_reads.nf'
-include { PREDICT_HOP_TARGETS } from './modules/predict_hop_targets.nf'
 include { HISAT2_BUILD } from './modules/hisat2_build.nf'
 include { TARGETFINDER } from './modules/targetfinder.nf'
 include { BOWTIE_ALIGN_TO_VIRUSES } from './modules/bowtie_align_to_viruses.nf'
@@ -44,20 +43,25 @@ include { FASTQ_TO_FASTA } from './modules/fastq_to_fasta.nf'
 include { CONCAT_TARGETFINDER_RESULTS } from './modules/concat_targetfinder_results.nf'
 include { ANNOTATE_TARGETS } from './modules/annotate_targets.nf'
 include { PRELIMINARY_MULTIQC } from './modules/preliminary_multiqc.nf'
+include { PRELIMINARY_MULTIQC as FASTQC_MULTIQC} from './modules/preliminary_multiqc.nf'
+include { PRELIMINARY_MULTIQC as TRIM_GALORE_MULTIQC} from './modules/preliminary_multiqc.nf'
 include { CHECK_TF_READS_LOCATION } from './modules/check_tf_reads_location.nf'
 include { MIRNA_TARGET } from './modules/mirna_target.nf'
 include { PLOT_SHORTSTACK_CLUSTERS } from './modules/plot_clusters.nf'
 include { PLOT_SRNA_LENGTH_DISTRIBUTION } from './modules/plot_length_dist.nf'
 include {EGGNOG_ANNOTATION} from './modules/eggnog_annotation.nf'
 include {GOATOOLS_GOSLIM} from './modules/goatools_goslim.nf'
+include {SUMMARIZE_LOGS} from './modules/summarize_logs.nf'
+include {FASTP_TRIM} from './modules/fastp.nf'
 
 // params.input_csv = "data/single-end.csv"
 params.report_id = "all_single-end"
 params.host_genome_fasta = "data/hops_genome/hops_genome.fa"
 params.pathogen_genome_fasta = "data/verticilium_genome/T2/VnonalfalfaeT2.fasta"
-params.pathogen_genome_gff = "data/verticilium_genome/T2/merged.gff3"
+params.pathogen_genome_gff = "data/verticilium_genome/T2/Verticillium_nonalfalfae_T2.gff3"
 params.reads = "data/sra_data/*/*.fastq"
 params.sra_csv = "data/sra_accessions.csv"
+params.adapter_table = "data/sra_accessions_adapters.csv"
 params.sra_csv_pathogen = "data/sra_accessions_pathogen.csv"
 params.host_transcriptome_fasta = "data/hops_transcriptome/combinedGeneModels.fullAssembly.transcripts.fasta"
 params.annotated_host_mrnas_fasta = "data/annotated_hop_mrnas/sequence.fasta"
@@ -85,15 +89,15 @@ workflow {
             tuple(row.sample_id, sra_list)
         }
 
-    read_ch_pathogen = Channel
-        .fromPath(params.sra_csv_pathogen)
-        .splitCsv(header: true)
-        .map { row ->
-            // Collect all non-empty SRA IDs from the row
-            def sra_list = row.values()
-                            .findAll { it =~ /^SRR/ }   // keep only SRA IDs
-            tuple(row.sample_id, sra_list)
-        }
+    // read_ch_pathogen = Channel
+    //     .fromPath(params.sra_csv_pathogen)
+    //     .splitCsv(header: true)
+    //     .map { row ->
+    //         // Collect all non-empty SRA IDs from the row
+    //         def sra_list = row.values()
+    //                         .findAll { it =~ /^SRR/ }   // keep only SRA IDs
+    //         tuple(row.sample_id, sra_list)
+    //     }
  
  // MOCK DATA TESTING
 //    trim_input_ch = Channel.from([
@@ -109,14 +113,17 @@ workflow {
 // END MOCK DATA TESTING
  
  
-    FETCH_SRA_PATHOGEN(read_ch_pathogen)
-    FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out)
-    TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
+    // FETCH_SRA_PATHOGEN(read_ch_pathogen)
+    // FASTQC_PATHOGEN(FETCH_SRA_PATHOGEN.out.reads)
+    // TRIM_GALORE_PATHOGEN(FETCH_SRA_PATHOGEN.out)
     FETCH_SRA(read_ch)
-    FASTQC(FETCH_SRA.out)
-    TRIM_GALORE(FETCH_SRA.out)
+    FASTQC(FETCH_SRA.out.reads)
+    FASTQC_MULTIQC('fastqc_report', FASTQC.out.html.mix(FASTQC.out.zip).collect())
 
-    merged_ch = MERGE_READS(TRIM_GALORE.out.trimmed_reads)
+    //TRIM_GALORE(FETCH_SRA.out.reads, file(params.adapter_table))
+    //TRIM_GALORE_MULTIQC('trim_galore_report', TRIM_GALORE.out.trimming_reports.mix(TRIM_GALORE.out.fastqc_reports).collect())
+    FASTP_TRIM(FETCH_SRA.out.reads)
+    merged_ch = MERGE_READS(FASTP_TRIM.out.trimmed_reads)
     
     // PRELIMINARY ALIGNMENT TO HOST AND PATHOGEN GENOMES TO ASSESS CONTAMINATION LEVELS
         host_index_ch = BOWTIE_BUILD_HOST(file(params.host_genome_fasta))
@@ -136,6 +143,10 @@ workflow {
         BOWTIE_ALIGN_TO_VIRUSES(merged_ch, viruses_index_ch)
         CHECK_ALIGNMENT_DISTRIBUTION(BOWTIE_ALIGN_TO_VIRUSES.out.results)
         CONCAT_ALIGNMENT_DISTRIBUTION(CHECK_ALIGNMENT_DISTRIBUTION.out.percent_row.collect())
+    //
+    // MATCHING WITH CANDIDATE sRNAs
+        candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
+        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(FASTP_TRIM.out.trimmed_reads, candidate_srna_index_ch)
     //
 
     FILTER_SRNA_LENGTH(merged_ch)
@@ -185,13 +196,10 @@ workflow {
         BOWTIE_ALIGN_TO_PATHOGEN(KEEP_TREATED_ONLY.out.filtered_reads, pathogen_index_ch)
         BOWTIE_ALIGN_TO_HOST(BOWTIE_ALIGN_TO_PATHOGEN.out.results, host_index_ch)
         LIST_PATHOGEN_READS(BOWTIE_ALIGN_TO_HOST.out.list_input)
-        filtered_reads = FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
+        FILTER_PATHOGEN_READS(LIST_PATHOGEN_READS.out.filter_input)
+        filtered_reads = FILTER_PATHOGEN_READS.out.pathogen_specific_reads
     //
 
-    // MATCHING WITH CANDIDATE sRNAs
-        candidate_srna_index_ch = BOWTIE_BUILD_CANDIDATE_SRNAS(file(params.candidate_srnas_fasta))
-        BOWTIE_ALIGN_TO_CANDIDATE_SRNAS(filtered_reads, candidate_srna_index_ch)
-    //
 
     SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
     CHECK_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
@@ -211,21 +219,37 @@ workflow {
     //
     PLOT_SHORTSTACK_CLUSTERS(SHORTSTACK.out.results, file(params.pathogen_genome_fasta))
 
-    qc_ch = FASTQC.out.zip
-        .mix(
-            FASTQC.out.html,
-            FASTQC_PATHOGEN.out.html,
-            TRIM_GALORE.out.trimming_reports,
-            TRIM_GALORE.out.fastqc_reports,
-            TRIM_GALORE_PATHOGEN.out.trimming_reports,
-            TRIM_GALORE_PATHOGEN.out.fastqc_reports,
-            BOWTIE_ALIGN_TO_VIRUSES.out.log,
-            // KEEP_ONLY_PATHOGEN_READS.out.log,
-            KEEP_TREATED_ONLY.out.log,
-            BOWTIE_ALIGN_TO_PATHOGEN.out.log,
-            BOWTIE_ALIGN_TO_HOST.out.log
-        )
-        .collect()
+    // qc_ch = FASTQC.out.zip
+    //     .mix(
+    //         FASTQC.out.html,
+    //       //  FASTQC_PATHOGEN.out.html,
+    //         TRIM_GALORE.out.trimming_reports,
+    //         TRIM_GALORE.out.fastqc_reports,
+    //       //  TRIM_GALORE_PATHOGEN.out.trimming_reports,
+    //       //  TRIM_GALORE_PATHOGEN.out.fastqc_reports,
+    //         BOWTIE_ALIGN_TO_VIRUSES.out.log,
+    //         // KEEP_ONLY_PATHOGEN_READS.out.log,
+    //         KEEP_TREATED_ONLY.out.log,
+    //         BOWTIE_ALIGN_TO_PATHOGEN.out.log,
+    //         BOWTIE_ALIGN_TO_HOST.out.log
+    //     )
+    //     .collect()
 
-    MULTIQC(params.report_id, qc_ch)
+    // MULTIQC(params.report_id, qc_ch)
+
+    // SUMMARIZE_LOGS(
+    //     FILTER_SRNA_LENGTH.out.log_info
+    //     .mix(
+    //         FETCH_SRA.out.log_info,
+    //         TRIM_GALORE.out.log_info,
+    //         BOWTIE_ALIGN_TO_VIRUSES.out.log_info,
+    //         KEEP_TREATED_ONLY.out.log_info,
+    //         BOWTIE_ALIGN_TO_PATHOGEN.out.log_info,
+    //         BOWTIE_ALIGN_TO_HOST.out.log_info,
+    //         FILTER_PATHOGEN_READS.out.log_info,
+    //         SHORTSTACK.out.log_info,
+    //         MIRNA_TARGET.out.log_info
+    //     )
+    //     .collect()
+    // )
 }
