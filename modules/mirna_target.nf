@@ -13,24 +13,14 @@ process MIRNA_TARGET {
 
     output:
     tuple val(sample_id), path("${sample_id}_identified_targets.tsv"), emit: results
-    tuple val(sample_id), path("${sample_id}_shortstack_majorRNAs.fasta"), emit: extracted_fasta
     path "${task.process}_${sample_id}.tsv", emit: log_info
 
     script:
     """
-    # Extract MajorRNAs from ShortStack Results.txt
-    # Use short numeric-safe IDs (c1, c2, ...) to avoid FASTA36/parser truncation
-    awk -F '\\t' '
-      NR>1 && \$11 != "" {
-        id=\$2
-        sub(/^Cluster_/, "", id)
-        print ">c"id"\\n"\$11
-      }
-    ' ${shortstack_results} > ${sample_id}_shortstack_majorRNAs.fasta
     
     # 2) Run ssearch36 and SAVE raw output
     ssearch36 -i -f -8 -g -3 -E 10000 -T 8 -b 200 -r +4/-3 -n -U -W 10 -N 20000 \\
-      ${sample_id}_shortstack_majorRNAs.fasta ${transcriptome_fasta} \\
+      ${shortstack_results} ${transcriptome_fasta} \\
       > ${sample_id}_ssearch36.raw.txt
 
     # 3) Parse ssearch output and SAVE parsed intermediate

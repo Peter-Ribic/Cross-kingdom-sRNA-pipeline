@@ -14,6 +14,7 @@ process FASTP_TRIM {
   tuple val(sample_id), path("*_trimmed.fq.gz"), emit: trimmed_reads
   path("*_fastp.html"), emit: qc_html
   path("*_fastp.json"), emit: qc_json
+  path("${task.process}_${sample_id}.tsv"), emit: log_info
 
   script:
   """
@@ -32,5 +33,8 @@ process FASTP_TRIM {
         --html "\${prefix}_fastp.html" \\
         --json "\${prefix}_fastp.json"
   done
+
+  num_outputed_reads=\$(zcat *_trimmed.fq.gz | awk 'END{print NR/4}')
+  echo -e "${task.process}\\t${sample_id}\\t\$num_outputed_reads" >> ${task.process}_${sample_id}.tsv
   """
 }

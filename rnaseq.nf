@@ -208,7 +208,7 @@ workflow {
     BOWTIE_ALIGN(filtered_reads, BOWTIE_BUILD.out.index_files, 'host_transcriptome_index')
 
     // USE SHORTSTACK MAJORRNA OUTPUT TO PREDICT HOP TARGETS
-        MIRNA_TARGET(SHORTSTACK.out.results, file(params.annotated_host_mrnas_fasta), file(params.mirna_target_repo))
+        MIRNA_TARGET(CHECK_ANNOTATION.out.non_protein_coding_fasta, file(params.annotated_host_mrnas_fasta), file(params.mirna_target_repo))
     //
 
     // ANNOTATE TARGETS
@@ -237,19 +237,20 @@ workflow {
 
     // MULTIQC(params.report_id, qc_ch)
 
-    // SUMMARIZE_LOGS(
-    //     FILTER_SRNA_LENGTH.out.log_info
-    //     .mix(
-    //         FETCH_SRA.out.log_info,
-    //         TRIM_GALORE.out.log_info,
-    //         BOWTIE_ALIGN_TO_VIRUSES.out.log_info,
-    //         KEEP_TREATED_ONLY.out.log_info,
-    //         BOWTIE_ALIGN_TO_PATHOGEN.out.log_info,
-    //         BOWTIE_ALIGN_TO_HOST.out.log_info,
-    //         FILTER_PATHOGEN_READS.out.log_info,
-    //         SHORTSTACK.out.log_info,
-    //         MIRNA_TARGET.out.log_info
-    //     )
-    //     .collect()
-    // )
+    SUMMARIZE_LOGS(
+        FILTER_SRNA_LENGTH.out.log_info
+        .mix(
+            FETCH_SRA.out.log_info,
+            FASTP_TRIM.out.log_info,
+            //TRIM_GALORE.out.log_info,
+            BOWTIE_ALIGN_TO_VIRUSES.out.log_info,
+            KEEP_TREATED_ONLY.out.log_info,
+            BOWTIE_ALIGN_TO_PATHOGEN.out.log_info,
+            BOWTIE_ALIGN_TO_HOST.out.log_info,
+            FILTER_PATHOGEN_READS.out.log_info,
+            SHORTSTACK.out.log_info,
+            MIRNA_TARGET.out.log_info
+        )
+        .collect()
+    )
 }
