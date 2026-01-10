@@ -260,6 +260,90 @@ for go_id in top_category_ids:
 prot_df = pd.DataFrame(rows)
 prot_df.to_csv("${sample_id}_top_overrepresented_proteins.tsv", sep='\\t', index=False)
 
+# NEW: same format as *_top_overrepresented_proteins.txt but for ALL categories (not only overrepresented/top)
+# Build a per-category gene/protein listing for all categories present in target (ordered by Target_Genes desc)
+all_cat_ids_ordered = df_plot.sort_values('Target_Genes', ascending=False)['GO_Slim_ID'].tolist()
+
+rows_all = []
+for go_id in all_cat_ids_ordered:
+    cat_info = df.loc[df['GO_Slim_ID'] == go_id].head(1)
+    if cat_info.empty:
+        continue
+
+    cat_term = cat_info['GO_Slim_Term'].iloc[0]
+    cat_ns = cat_info['Category'].iloc[0]
+    cat_fc = float(cat_info['Fold_Change'].iloc[0])
+    cat_fdr = cat_info['FDR_BH'].iloc[0]
+    cat_p = cat_info['P_Value'].iloc[0]
+    cat_t = int(cat_info['Target_Genes'].iloc[0])
+    cat_b = int(cat_info['Background_Genes'].iloc[0])
+
+    genes = sorted(set(cat_to_genes.get(go_id, [])))
+    for gene in genes:
+        orig_gos = target_annotations.get(gene, [])
+        orig_go_names = [go_name(g) for g in orig_gos]
+        mapped_slims = sorted(set(target_categories.get(gene, [])))
+        mapped_slim_names = [go_name(g) for g in mapped_slims]
+
+        rows_all.append({
+            'GO_Slim_ID': go_id,
+            'GO_Slim_Term': cat_term,
+            'GO_Slim_Namespace': cat_ns,
+            'Category_Target_Genes': cat_t,
+            'Category_Background_Genes': cat_b,
+            'Category_Fold_Change': cat_fc,
+            'Category_P_Value': cat_p,
+            'Category_FDR_BH': cat_fdr,
+            'Gene_or_Protein_ID': gene,
+            'Original_GO_Terms': ";".join(orig_gos),
+            'Original_GO_Term_Names': ";".join([n for n in orig_go_names if n]),
+            'Mapped_GO_Slim_Terms': ";".join(mapped_slims),
+            'Mapped_GO_Slim_Term_Names': ";".join([n for n in mapped_slim_names if n]),
+        })
+
+prot_all_df = pd.DataFrame(rows_all)
+
+with open("${sample_id}_all_categories_proteins.txt", "w") as f:
+    f.write(f"All GO-slim categories (same per-category report format) - ${sample_id}\\n")
+    f.write("="*90 + "\\n")
+    f.write(f"FDR limit reference: {FDR_LIMIT} (not used for filtering here)\\n")
+    f.write(f"Plot-only excluded GO ID: {PLOT_EXCLUDE_GOID}\\n")
+    f.write(f"Fold_Change definition: (Target%+{EPS_FC})/(Background%+{EPS_FC})\\n\\n")
+
+    f.write("Per-category gene/protein IDs and GO-derived details (ALL categories):\\n")
+    f.write("-"*90 + "\\n\\n")
+
+    if prot_all_df.empty:
+        f.write("No genes mapped to any GO-slim categories.\\n")
+    else:
+        for go_id in all_cat_ids_ordered:
+            block = prot_all_df[prot_all_df['GO_Slim_ID'] == go_id].copy()
+            if block.empty:
+                continue
+
+            cat_term = block['GO_Slim_Term'].iloc[0]
+            fc = float(block['Category_Fold_Change'].iloc[0])
+            p = block['Category_P_Value'].iloc[0]
+            q = block['Category_FDR_BH'].iloc[0]
+            p_str = "NA" if pd.isna(p) else f"{p:.2g}"
+            q_str = "NA" if pd.isna(q) else f"{q:.2g}"
+
+            f.write(f"{go_id} - {cat_term}\\n")
+            f.write(f"  Fold-change: {fc:.2g}×   p: {p_str}   FDR: {q_str}\\n")
+            f.write(f"  Genes/proteins ({len(block)}):\\n")
+
+            for _, rr in block.sort_values('Gene_or_Protein_ID').iterrows():
+                f.write(f"    - {rr['Gene_or_Protein_ID']}\\n")
+                if rr['Original_GO_Terms']:
+                    f.write(f"      Original GO: {rr['Original_GO_Terms']}\\n")
+                if rr['Original_GO_Term_Names']:
+                    f.write(f"      Original GO names: {rr['Original_GO_Term_Names']}\\n")
+                if rr['Mapped_GO_Slim_Terms']:
+                    f.write(f"      Mapped slim: {rr['Mapped_GO_Slim_Terms']}\\n")
+                if rr['Mapped_GO_Slim_Term_Names']:
+                    f.write(f"      Mapped slim names: {rr['Mapped_GO_Slim_Term_Names']}\\n")
+            f.write("\\n")
+
 with open("${sample_id}_top_overrepresented_proteins.txt", "w") as f:
     f.write(f"Top overrepresented GO-slim categories (used for multiplier plot) - ${sample_id}\\n")
     f.write("="*90 + "\\n")
