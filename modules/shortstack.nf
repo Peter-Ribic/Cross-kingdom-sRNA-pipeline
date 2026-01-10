@@ -15,7 +15,7 @@ process SHORTSTACK {
     tuple val(sample_id), path("ShortStack_out/*condensed.bam"), emit: bam
     tuple val(sample_id), path("ShortStack_out/*condensed.fa"), emit: fasta
     tuple val(sample_id), path("ShortStack_out/Results.txt"), emit: results
-    path("ShortStack_out/${sample_id}_MajorRNA.fa"), emit: majorrna_fasta
+    tuple val(sample_id), path("ShortStack_out/${sample_id}_MajorRNA.fa"), emit: majorrna_fasta
     path "${task.process}_${sample_id}.tsv", emit: log_info
 
     script:
