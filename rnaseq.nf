@@ -242,7 +242,6 @@ workflow {
         .mix(
             FETCH_SRA.out.log_info,
             FASTP_TRIM.out.log_info,
-            //TRIM_GALORE.out.log_info,
             BOWTIE_ALIGN_TO_VIRUSES.out.log_info,
             KEEP_TREATED_ONLY.out.log_info,
             BOWTIE_ALIGN_TO_PATHOGEN.out.log_info,

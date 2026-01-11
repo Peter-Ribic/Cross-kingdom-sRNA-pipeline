@@ -14,8 +14,8 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
     script:
     """
     bowtie2 \
-        --end-to-end \
-        --score-min L,0,0 \
+        --local \
+        -L 19 -N 0 \
         --no-unal \
         -p ${task.cpus} \
         -x pathogen_index \

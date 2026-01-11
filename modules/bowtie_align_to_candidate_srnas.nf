@@ -13,7 +13,8 @@ process BOWTIE_ALIGN_TO_CANDIDATE_SRNAS {
     script:
     """
     bowtie2 \
-        --fast-local \
+        --local \
+        -L 19 -N 0 \
         --no-unal \
         -p ${task.cpus} \
         -x candidate_srnas \
