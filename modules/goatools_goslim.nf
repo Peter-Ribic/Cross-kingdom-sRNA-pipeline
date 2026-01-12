@@ -30,7 +30,7 @@ import pandas as pd
 from collections import Counter, defaultdict
 from goatools.base import get_godag
 
-FDR_LIMIT = 0.1
+FDR_LIMIT = 0.05
 TOP_PLOT_N = 15
 EPS_FC = 0.1
 
@@ -463,7 +463,7 @@ try:
     if df_over.empty:
         raise ValueError("No overrepresented categories (Fold_Change > 1) to plot.")
 
-    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
+    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.05)].copy()
 
     fallback = False
     df = df_sig
@@ -488,9 +488,9 @@ try:
     ax.set_xlabel('BG multiplier (Target% / Background%)')
 
     if fallback:
-        ax.set_title('No overrepresented terms pass FDR≤0.1; showing lowest-FDR overrepresented - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.05; showing lowest-FDR overrepresented - ${sample_id}')
     else:
-        ax.set_title('Overrepresented GO Slim Categories (FDR≤0.1): BG Multiplier - ${sample_id}')
+        ax.set_title('Overrepresented GO Slim Categories (FDR≤0.05): BG Multiplier - ${sample_id}')
 
     ax.set_xticks([1, 1.5, 2, 3, 5])
     ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'])
@@ -570,7 +570,7 @@ try:
     if df_over.empty:
         raise ValueError("No overrepresented categories (Fold_Change > 1) to plot.")
 
-    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.1)].copy()
+    df_sig = df_over[(df_over['FDR_BH'].notna()) & (df_over['FDR_BH'] <= 0.05)].copy()
 
     fallback = False
     df = df_sig
@@ -592,9 +592,9 @@ try:
     ax.set_xlabel('Percentage of Genes (%)')
 
     if fallback:
-        ax.set_title('No overrepresented terms pass FDR≤0.1; showing top overrepresented by Target% - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.05; showing top overrepresented by Target% - ${sample_id}')
     else:
-        ax.set_title('Top Overrepresented GO Slim Categories by Target% (FDR≤0.1) - ${sample_id}')
+        ax.set_title('Top Overrepresented GO Slim Categories by Target% (FDR≤0.05) - ${sample_id}')
 
     ax.legend()
 
