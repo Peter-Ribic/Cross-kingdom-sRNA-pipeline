@@ -1,7 +1,6 @@
 process BOWTIE_ALIGN {
     tag "$sample_id"
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/${index_prefix}/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(reads)
@@ -15,8 +14,8 @@ process BOWTIE_ALIGN {
     script:
     """
     bowtie2 \
-        --end-to-end \
-        --score-min L,0,0 \
+        --local \
+        -L 19 -N 0 \
         --no-unal \
         -p ${task.cpus} \
         -x ${index_prefix} \
