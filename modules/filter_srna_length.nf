@@ -5,7 +5,7 @@ process FILTER_SRNA_LENGTH {
     cpus 40
     container "quay.io/biocontainers/seqkit:2.10.1--he881be0_0"
 
-    publishDir "results/filtered_srna/${sample_id}", mode: 'copy'
+    publishDir "results/main_filtering/length_filtered_srna/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(reads)

@@ -4,7 +4,7 @@ process SHORTSTACK {
 
     container "quay.io/biocontainers/shortstack:4.1.2--hdfd78af_0"
 
-    publishDir "results/shortstack/${sample_id}", mode: 'copy'
+    publishDir "results/shortstack/shortstack_results/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), path(trimmed_reads)

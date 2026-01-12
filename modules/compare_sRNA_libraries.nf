@@ -1,7 +1,7 @@
 process COMPARE_SRNA_LIBRARIES_SIMILAR {
     tag "$sample1 vs $sample2"
     container "quay.io/biocontainers/vsearch:2.30.1--hd6d6fdc_0"
-    publishDir "results/srna_overlap", mode: 'copy'
+    publishDir "results/library_similarity/srna_overlap", mode: 'copy'
 
     input:
     tuple val(sample1), path(sample1_fq), val(sample2), path(sample2_fq)

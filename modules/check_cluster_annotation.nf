@@ -1,4 +1,4 @@
-process CHECK_ANNOTATION {
+process CHECK_CLUSTER_ANNOTATION {
     tag "$sample_id"
 
     conda 'bioconda::samtools=1.15.1 bioconda::bedtools=2.30.0'
@@ -15,6 +15,7 @@ process CHECK_ANNOTATION {
     path "majorRNA_feature_type_counts.tsv", emit: feature_counts
     tuple val(sample_id), path("${sample_id}_MajorRNA_non_protein_coding.fa"), emit: non_protein_coding_fasta
     path "*.log", emit: logs
+    path "${task.process}_${sample_id}.tsv", emit: log_info
 
     script:
     """
@@ -168,5 +169,8 @@ process CHECK_ANNOTATION {
              print seq
            }
          }' noncoding_normseqs.txt majorrna_records.tsv > ${sample_id}_MajorRNA_non_protein_coding.fa
+
+    num_clusters=\$(awk 'END{print NR/2}' ${sample_id}_MajorRNA_non_protein_coding.fa)
+    echo -e "${task.process}\\t${sample_id}\\t\$num_clusters" > ${task.process}_${sample_id}.tsv
     """
 }

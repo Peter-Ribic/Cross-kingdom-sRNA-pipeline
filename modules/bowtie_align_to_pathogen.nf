@@ -1,7 +1,7 @@
 process BOWTIE_ALIGN_TO_PATHOGEN {
     tag "$sample_id"
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/pathogen_alignments/${sample_id}", mode: 'copy'
+    publishDir "results/main_filtering/pathogen_alignments/${sample_id}", mode: 'copy'
     input:
     tuple val(sample_id), path(reads)
     path index_files

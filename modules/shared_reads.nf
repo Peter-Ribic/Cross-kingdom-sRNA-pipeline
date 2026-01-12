@@ -1,7 +1,7 @@
 process SHARED_READS {
     tag "$sample1 vs $sample2"
     container "quay.io/biocontainers/bioawk:1.0--h577a1d6_13"
-    publishDir "results/shared_reads", mode: 'copy'
+    publishDir "results/library_similarity/shared_reads", mode: 'copy'
 
     input:
     tuple val(sample1), path(sample1_fq), val(sample2), path(sample2_fq)
