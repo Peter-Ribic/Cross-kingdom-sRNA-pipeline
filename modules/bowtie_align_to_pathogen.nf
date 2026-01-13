@@ -7,8 +7,8 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
     path index_files
 
     output:
-    tuple val(sample_id), path(reads), path("${sample_id}_pathogen_0mm.sam"), path("${sample_id}_pathogen_ids.txt"), emit: results
-    path("${sample_id}_pathogen_0mm.log"), emit: log
+    tuple val(sample_id), path(reads), path("${sample_id}_pathogen.sam"), path("${sample_id}_pathogen_ids.txt"), emit: results
+    path("${sample_id}_pathogen.log"), emit: log
     path "${task.process}_${sample_id}.tsv", emit: log_info
     
     script:
@@ -20,11 +20,11 @@ process BOWTIE_ALIGN_TO_PATHOGEN {
         -p ${task.cpus} \
         -x pathogen_index \
         -U ${reads} \
-        -S ${sample_id}_pathogen_0mm.sam 2> ${sample_id}_pathogen_0mm.log   
+        -S ${sample_id}_pathogen.sam 2> ${sample_id}_pathogen.log   
 
-    total_aligned_records=\$(grep -vc "^@" ${sample_id}_pathogen_0mm.sam)
+    total_aligned_records=\$(grep -vc "^@" ${sample_id}_pathogen.sam)
     echo -e "${task.process}\\t${sample_id}\\t\$total_aligned_records" > ${task.process}_${sample_id}.tsv
 
-    grep -v "^@" ${sample_id}_pathogen_0mm.sam | cut -f1 | sort | uniq > ${sample_id}_pathogen_ids.txt
+    grep -v "^@" ${sample_id}_pathogen.sam | cut -f1 | sort | uniq > ${sample_id}_pathogen_ids.txt
     """
 }

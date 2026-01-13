@@ -9,8 +9,8 @@ process BOWTIE_ALIGN_TO_HOST {
     path index_prefix
     
     output:
-    tuple val(sample_id), path(reads), path("${sample_id}_host_0mm.sam"), path(pathogen_ids), emit: list_input
-    path("${sample_id}_host_0mm.log"), emit: log
+    tuple val(sample_id), path(reads), path("${sample_id}_host.sam"), path(pathogen_ids), emit: list_input
+    path("${sample_id}_host.log"), emit: log
     path "${task.process}_${sample_id}.tsv", emit: log_info
 
 
@@ -23,9 +23,9 @@ process BOWTIE_ALIGN_TO_HOST {
         -p ${task.cpus} \
         -x host_index \
         -U ${reads} \
-        -S ${sample_id}_host_0mm.sam 2> ${sample_id}_host_0mm.log   
+        -S ${sample_id}_host.sam 2> ${sample_id}_host.log   
 
-    total_aligned_records=\$(grep -vc "^@" ${sample_id}_host_0mm.sam)
+    total_aligned_records=\$(grep -vc "^@" ${sample_id}_host.sam)
     echo -e "${task.process}\\t${sample_id}\\t\$total_aligned_records" > ${task.process}_${sample_id}.tsv
     """
 }
