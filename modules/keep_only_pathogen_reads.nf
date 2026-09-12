@@ -3,7 +3,6 @@ process KEEP_ONLY_PATHOGEN_READS {
     memory '200 GB'
     cpus 20
     container "quay.io/biocontainers/bioawk:1.0--h577a1d6_13"
-    publishDir "results/${sample_id}/keep_pathogen_reads_only", mode: 'copy'
 
     input:
     tuple val(sample_id), path(reads), val(pathogen_sample_id), path(pathogen_reads)

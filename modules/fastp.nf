@@ -5,7 +5,6 @@ process FASTP_TRIM {
   tag "$sample_id"
 
   conda 'bioconda::fastp'
-  publishDir "results/main_filtering/trimming/${sample_id}", mode: 'symlink'
 
   input:
   tuple val(sample_id), path(reads)

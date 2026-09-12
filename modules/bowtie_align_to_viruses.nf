@@ -1,7 +1,6 @@
 process BOWTIE_ALIGN_TO_VIRUSES {
     tag "$sample_id"
     container "biocontainers/bowtie2:v2.4.1_cv1"
-    publishDir "results/viruses/viruses_alignments/${sample_id}", mode: 'symlink'
 
     input:
     tuple val(sample_id), path(reads)

@@ -1,7 +1,6 @@
 process FETCH_SRA {
     tag "$sample_id"
     conda 'bioconda::sra-tools=3.0.3'
-    publishDir "results/fetch_sra/${sample_id}", mode: 'copy'
 
     input:
     tuple val(sample_id), val(accessions)
