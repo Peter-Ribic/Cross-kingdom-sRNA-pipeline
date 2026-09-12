@@ -1,4 +1,7 @@
 [core]
-    remote = dagshub
+    remote = origin-s3
 ['remote "dagshub"']
     url = https://dagshub.com/Peter-Ribic/Cross-kingdom-sRNA-pipeline.git
+['remote "origin-s3"']
+    url = s3://dvc
+    endpointurl = https://dagshub.com/peterribic0/Cross-kingdom-sRNA-pipeline.s3
