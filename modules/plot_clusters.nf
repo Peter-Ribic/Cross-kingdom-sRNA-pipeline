@@ -27,23 +27,16 @@ process PLOT_SHORTSTACK_CLUSTERS {
   tsv_path  = "${shortstack_clusters_tsv}"
   fa_path   = "${genome_fasta}"
 
-  # -------------------------
-  # Helpers
-  # -------------------------
   def natural_key(s):
       return [int(t) if t.isdigit() else t.lower()
               for t in re.split(r'(\\d+)', str(s))]
 
-  # -------------------------
-  # Genome lengths
-  # -------------------------
+ 
   chrom_lengths = {rec.id: len(rec.seq) for rec in SeqIO.parse(fa_path, "fasta")}
   if not chrom_lengths:
       raise SystemExit("[ERROR] No contigs read from FASTA")
 
-  # -------------------------
-  # Read ShortStack clusters
-  # -------------------------
+
   try:
       df = pd.read_csv(tsv_path, sep='\\t', comment='#')
       if df.shape[1] == 1:
@@ -76,9 +69,7 @@ process PLOT_SHORTSTACK_CLUSTERS {
   df[c_start] = np.minimum(s, e)
   df[c_end]   = np.maximum(s, e)
 
-  # -------------------------
-  # Plot
-  # -------------------------
+
   contigs = sorted(chrom_lengths, key=natural_key)
   n = len(contigs)
   genome_max = max(chrom_lengths[c] for c in contigs)
@@ -89,15 +80,12 @@ process PLOT_SHORTSTACK_CLUSTERS {
 
   y_pos = {c: (n - 1 - i) for i, c in enumerate(contigs)}
 
-  # -------- VISIBILITY CONTROLS --------
   CHR_LW        = 12.0      # chromosome line thickness
   CHR_ALPHA     = 0.35
 
   CLUSTER_HALF  = 0.3     # vertical half-height (HEIGHT)
   VISIBLE_BP    = 5_000   # minimum visible WIDTH in bp (KEY PARAMETER)
-  # ------------------------------------
 
-  # Chromosome center lines
   for c in contigs:
       ax.hlines(
           y_pos[c],
@@ -108,7 +96,6 @@ process PLOT_SHORTSTACK_CLUSTERS {
           zorder=1
       )
 
-  # Cluster bands (width + height controlled)
   for c, sub in df.groupby(c_chrom, sort=False):
       y = y_pos[c]
       for x1, x2 in zip(sub[c_start], sub[c_end]):
@@ -129,7 +116,6 @@ process PLOT_SHORTSTACK_CLUSTERS {
               )
           )
 
-  # Axes
   ax.set_yticks([y_pos[c] for c in contigs])
   ax.set_yticklabels(contigs, fontsize=10)
 

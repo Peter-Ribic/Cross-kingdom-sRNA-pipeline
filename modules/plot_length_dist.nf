@@ -29,10 +29,8 @@ process PLOT_SRNA_LENGTH_DISTRIBUTION {
   if df.empty:
       raise SystemExit(f"[ERROR] Empty/invalid TSV: {tsv_path}")
 
-  # -------- Display cap --------
-  MAX_LEN = 50
+  MAX_LEN = 35
   df = df[df['length'] <= MAX_LEN]
-  # -----------------------------
 
   lengths = df['length'].astype(int).tolist()
   counts  = df['count'].astype(int).tolist()
@@ -46,7 +44,6 @@ process PLOT_SRNA_LENGTH_DISTRIBUTION {
   ax.set_ylabel("Count")
   ax.set_title(f"{sample_id}: sRNA length distribution (≤ {MAX_LEN} nt)")
 
-  # Start plot at first visible bar
   ax.set_xlim(min_len - 0.5, MAX_LEN + 0.5)
   ax.set_xticks(lengths)
 

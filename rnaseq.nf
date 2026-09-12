@@ -166,7 +166,7 @@ workflow {
     // CLUSTER IDENTIFICATION AND ANNOTATION
         SHORTSTACK(filtered_reads, file(params.pathogen_genome_fasta))
         PLOT_SHORTSTACK_CLUSTERS(SHORTSTACK.out.results, file(params.pathogen_genome_fasta))
-        CHECK_CLUSTER_ANNOTATION(SHORTSTACK.out.shortstack_out, file(params.pathogen_genome_gff))
+        CHECK_CLUSTER_ANNOTATION(SHORTSTACK.out.majorrna_exact_all, file(params.pathogen_genome_gff))
     //
 
     // USE SHORTSTACK MAJORRNA OUTPUT TO PREDICT HOP TARGETS

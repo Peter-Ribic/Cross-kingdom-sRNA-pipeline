@@ -48,7 +48,6 @@ process KEEP_TREATED_ONLY {
         }
     '
 
-    # Compress filtered reads
     gzip -c '${sample_id}_treated_only.fq' > ${sample_id}_treated_only.fq.gz
 
     num_sequences=\$(awk 'END{print NR/4}' ${sample_id}_treated_only.fq)

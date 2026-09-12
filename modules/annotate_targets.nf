@@ -20,9 +20,6 @@ process ANNOTATE_TARGETS {
     """
     set -euo pipefail
 
-    ######################################################################
-    # 1) Extract unique accessions from subject_id
-    ######################################################################
     awk -F '\\t' 'BEGIN{OFS="\\t"} \$0 !~ /^#/ && NF>1 {print \$2}' ${target_file} \\
       | awk '
           {
@@ -45,9 +42,6 @@ process ANNOTATE_TARGETS {
         ' \\
       | sort -u > ${sample_id}_target_accessions.txt
 
-    ######################################################################
-    # 1b) Extract query -> accession mapping (unique pairs)
-    ######################################################################
     awk -F '\\t' '\$0 !~ /^#/ && NF>1 {print \$1"\\t"\$2}' ${target_file} \\
       | awk -F '\\t' 'BEGIN{OFS="\\t"}
           {
@@ -69,10 +63,6 @@ process ANNOTATE_TARGETS {
 
     unique_targets=\$(wc -l < ${sample_id}_target_accessions.txt || echo "0")
 
-    ######################################################################
-    # 2) Build a local lookup table from mrna_fasta headers
-    # Columns: protein_id  gene  protein  full_header  first_token_id
-    ######################################################################
     awk '
       BEGIN{ OFS="\\t" }
       /^>/{
@@ -113,13 +103,6 @@ process ANNOTATE_TARGETS {
         ${sample_id}_mrna_proteinid_map.tsv
     }
 
-    ######################################################################
-    # 2c) Build protein FASTA for (a) targets and (b) whole transcriptome
-    # Uses NCBI efetch -db protein
-    #
-    # CHANGE REQUEST: targets_proteins.faa headers should be "id_proteinname"
-    # (transcriptome_proteins.faa remains ">id" only)
-    ######################################################################
     cut -f1 ${sample_id}_mrna_proteinid_map.tsv | sort -u > ${sample_id}_transcriptome_protein_ids.txt
     n_bg_ids=\$(wc -l < ${sample_id}_transcriptome_protein_ids.txt || echo "0")
 
@@ -202,9 +185,6 @@ process ANNOTATE_TARGETS {
       : > ${sample_id}_transcriptome_proteins.faa
     fi
 
-    ######################################################################
-    # 3) Fetch functional annotations (prefer local FASTA header, fallback NCBI)
-    ######################################################################
     echo -e "Query\\tAccession\\tDescription\\tOrganism\\tFASTA_gene\\tFASTA_protein\\tFASTA_header" > ${sample_id}_functional_annotations.txt
 
     while read acc; do
@@ -277,9 +257,6 @@ process ANNOTATE_TARGETS {
     total_annotated_targets=\$(tail -n +2 ${sample_id}_functional_annotations.txt | grep -v '^.*\\tERROR' | wc -l || echo "0")
     failed_annotations=\$(tail -n +2 ${sample_id}_functional_annotations.txt | grep -c '^.*\\tERROR' || echo "0")
 
-    ######################################################################
-    # 4) Defense keyword scan
-    ######################################################################
     echo "Defense-Related Targets" > ${sample_id}_defense_targets.txt
     echo "======================" >> ${sample_id}_defense_targets.txt
     echo -e "Query\\tAccession\\tDescription\\tOrganism\\tFASTA_gene\\tFASTA_protein\\tFASTA_header" >> ${sample_id}_defense_targets.txt
@@ -291,9 +268,6 @@ process ANNOTATE_TARGETS {
 
     defense_targets_count=\$(tail -n +4 ${sample_id}_defense_targets.txt | wc -l || echo "0")
 
-    ######################################################################
-    # 5) Existing enrichment proxy (unchanged)
-    ######################################################################
     echo "Enrichment Analysis Results" > ${sample_id}_enrichment_analysis.txt
     echo "===========================" >> ${sample_id}_enrichment_analysis.txt
     echo "" >> ${sample_id}_enrichment_analysis.txt
@@ -341,9 +315,6 @@ process ANNOTATE_TARGETS {
       echo "Background proportion is 0; enrichment ratio not defined." >> ${sample_id}_enrichment_analysis.txt
     fi
 
-    ######################################################################
-    # 6) Summary (add FASTA counts; minimal change)
-    ######################################################################
     n_tgt_faa=\$(grep -c '^>' ${sample_id}_targets_proteins.faa 2>/dev/null || echo "0")
     n_bg_faa=\$(grep -c '^>' ${sample_id}_transcriptome_proteins.faa 2>/dev/null || echo "0")
 

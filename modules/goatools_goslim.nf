@@ -19,10 +19,6 @@ process GOATOOLS_GOSLIM {
   wget -q https://current.geneontology.org/ontology/subsets/goslim_generic.obo -O plant_goslim.obo
   wget -q http://purl.obolibrary.org/obo/go/go-basic.obo -O go-basic.obo
 
-  # NOTE:
-  # Without an external gene/protein annotation source (UniProt/Ensembl/TAIR GFF/GTF, etc.)
-  # we cannot reliably attach true "protein name/role" beyond GO-term-derived descriptions.
-  # The protein report produced includes GO-derived details.
 
   python3 << 'EOF'
 import math
@@ -35,7 +31,7 @@ TOP_PLOT_N = 15
 EPS_FC = 0.1
 
 EXCLUDE_ROOTS = {'GO:0009987', 'GO:0005622', 'GO:0008152', 'GO:0005737'}
-PLOT_EXCLUDE_GOID = "GO:0048856"  # anatomical structure development (plots only)
+PLOT_EXCLUDE_GOID = "GO:0048856"  
 
 godag = get_godag("go-basic.obo", optional_attrs={'relationship'})
 goslim = get_godag("plant_goslim.obo", optional_attrs={'relationship'})
@@ -96,7 +92,6 @@ for cats in background_categories.values():
     for cat in cats:
         background_counts[cat] += 1
 
-# Fisher exact helpers
 def log_comb(n, k):
     if k < 0 or k > n:
         return float('-inf')
@@ -189,7 +184,7 @@ else:
 df = df.sort_values('Target_Genes', ascending=False)
 df.to_csv("${sample_id}_goslim_categories.tsv", sep='\\t', index=False)
 
-# Top categories used for protein report (same selection logic as multiplier plot)
+
 df_plot = df[df['GO_Slim_ID'] != PLOT_EXCLUDE_GOID].copy()
 df_over = df_plot[df_plot['Fold_Change'] > 1.0].copy()
 
@@ -209,7 +204,6 @@ else:
 
 top_category_ids = top_categories['GO_Slim_ID'].tolist()
 
-# Protein/gene report
 cat_to_genes = defaultdict(list)
 for gene, cats in target_categories.items():
     for cat in cats:
@@ -260,8 +254,6 @@ for go_id in top_category_ids:
 prot_df = pd.DataFrame(rows)
 prot_df.to_csv("${sample_id}_top_overrepresented_proteins.tsv", sep='\\t', index=False)
 
-# NEW: same format as *_top_overrepresented_proteins.txt but for ALL categories (not only overrepresented/top)
-# Build a per-category gene/protein listing for all categories present in target (ordered by Target_Genes desc)
 all_cat_ids_ordered = df_plot.sort_values('Target_Genes', ascending=False)['GO_Slim_ID'].tolist()
 
 rows_all = []
@@ -447,7 +439,6 @@ with open("${sample_id}_goslim_summary.txt", 'w') as f:
 print("GO Slim analysis complete (including p-values, FDR, and top-category protein report)")
 EOF
 
-  # 4. Multiplier plot (RAW FC) - ONLY overrepresented - excludes GO:0048856 from plots
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -477,23 +468,26 @@ try:
     plot_df = df.sort_values('Fold_Change', ascending=False).head(15).copy()
     plot_df = plot_df.sort_values('Fold_Change', ascending=True)
 
-    fig, ax = plt.subplots(figsize=(12, 9))
+    n = len(plot_df)
+    fig_h = min(14.0, max(4.5, 0.55 * n + 2.5))
+    fig, ax = plt.subplots(figsize=(12, fig_h))
+
     y_pos = range(len(plot_df))
     ax.barh(y_pos, plot_df['Fold_Change'])
 
     ax.set_yticks(list(y_pos))
-    ax.set_yticklabels(plot_df['GO_Slim_Term'].astype(str).str.wrap(45))
+    ax.set_yticklabels(plot_df['GO_Slim_Term'].astype(str).str.wrap(45), fontsize=11)
 
     ax.axvline(1.0, linewidth=1)
-    ax.set_xlabel('BG multiplier (Target% / Background%)')
+    ax.set_xlabel('BG multiplier (Target% / Background%)', fontsize=12)
 
     if fallback:
-        ax.set_title('No overrepresented terms pass FDR≤0.05; showing lowest-FDR overrepresented - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.05; showing lowest-FDR overrepresented - ${sample_id}', fontsize=13)
     else:
-        ax.set_title('Overrepresented GO Slim Categories (FDR≤0.05): BG Multiplier - ${sample_id}')
+        ax.set_title('Overrepresented GO Slim Categories (FDR≤0.05): BG Multiplier - ${sample_id}', fontsize=13)
 
     ax.set_xticks([1, 1.5, 2, 3, 5])
-    ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'])
+    ax.set_xticklabels(['1×', '1.5×', '2×', '3×', '5×'], fontsize=11)
 
     for i, row in enumerate(plot_df.itertuples(index=False)):
         p = row.P_Value
@@ -501,7 +495,7 @@ try:
         p_str = "NA" if pd.isna(p) else f"{p:.2g}"
         q_str = "NA" if pd.isna(q) else f"{q:.2g}"
         label = f"T:{row.Target_Percent:.1f}%  B:{row.Background_Percent:.1f}%  ({row.Fold_Change:.2g}× bg)  p:{p_str}  FDR:{q_str}"
-        ax.text(row.Fold_Change, i, "  " + label, va='center')
+        ax.text(row.Fold_Change, i, "  " + label, va='center', fontsize=10)
 
     plt.tight_layout()
     plt.savefig("${sample_id}_goslim_plot_multiplier.png", dpi=300, bbox_inches='tight')
@@ -512,7 +506,6 @@ except Exception as e:
     print(f"Could not create multiplier plot: {e}")
 EOF
 
-  # 5. Dot plot (volcano): annotate each dot with category name
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -528,22 +521,23 @@ try:
     p = df['P_Value'].astype(float).fillna(1.0).clip(lower=1e-300)
     df['NegLog10P'] = -np.log10(p)
 
-    fig, ax = plt.subplots(figsize=(10, 9))
+    n = len(df)
+    fig_h = min(12.0, max(5.5, 0.18 * n + 6.0))
+    fig, ax = plt.subplots(figsize=(10, fig_h))
+
     ax.scatter(df['Log2_FC'], df['NegLog10P'], alpha=0.7)
     ax.axvline(0, linewidth=1)
 
-    # Annotate: for readability, annotate only the most "extreme" points
-    # (otherwise this plot becomes unreadable with many categories).
-    # We'll label: top 30 by -log10(p) + |log2FC|
     df['LabelScore'] = df['NegLog10P'] + df['Log2_FC'].abs()
     label_df = df.sort_values('LabelScore', ascending=False).head(30)
 
     for _, r in label_df.iterrows():
-        ax.text(float(r['Log2_FC']), float(r['NegLog10P']), " " + str(r['GO_Slim_Term']), fontsize=7)
+        ax.text(float(r['Log2_FC']), float(r['NegLog10P']), " " + str(r['GO_Slim_Term']), fontsize=9)
 
-    ax.set_xlabel('log2(Target% / Background%)')
-    ax.set_ylabel('-log10(p-value)')
-    ax.set_title('GO Slim Volcano (Dot Plot): Enrichment vs Significance - ${sample_id}')
+    ax.set_xlabel('log2(Target% / Background%)', fontsize=12)
+    ax.set_ylabel('-log10(p-value)', fontsize=12)
+    ax.set_title('GO Slim Volcano (Dot Plot): Enrichment vs Significance - ${sample_id}', fontsize=13)
+    ax.tick_params(axis='both', labelsize=11)
 
     plt.tight_layout()
     plt.savefig("${sample_id}_goslim_plot_volcano.png", dpi=300, bbox_inches='tight')
@@ -554,7 +548,6 @@ except Exception as e:
     print(f"Could not create volcano plot: {e}")
 EOF
 
-  # 6. Top-by-Target% plot (ONLY overrepresented), excludes GO:0048856 from plots
   python3 << 'EOF'
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -581,22 +574,26 @@ try:
     top_df = df.sort_values('Target_Percent', ascending=False).head(15).copy()
     top_df = top_df.iloc[::-1]
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    n = len(top_df)
+    fig_h = min(12.0, max(4.5, 0.55 * n + 2.5))
+    fig, ax = plt.subplots(figsize=(12, fig_h))
+
     y_pos = range(len(top_df))
 
     ax.barh(y_pos, top_df['Target_Percent'], label='Target')
     ax.barh(y_pos, top_df['Background_Percent'], label='Background', alpha=0.7)
 
     ax.set_yticks(list(y_pos))
-    ax.set_yticklabels(top_df['GO_Slim_Term'].astype(str).str.wrap(45))
-    ax.set_xlabel('Percentage of Genes (%)')
+    ax.set_yticklabels(top_df['GO_Slim_Term'].astype(str).str.wrap(45), fontsize=11)
+    ax.set_xlabel('Percentage of Proteins (%)', fontsize=12)
 
     if fallback:
-        ax.set_title('No overrepresented terms pass FDR≤0.05; showing top overrepresented by Target% - ${sample_id}')
+        ax.set_title('No overrepresented terms pass FDR≤0.05; showing top overrepresented by Target% - ${sample_id}', fontsize=13)
     else:
-        ax.set_title('Top Overrepresented GO Slim Categories by Target% (FDR≤0.05) - ${sample_id}')
+        ax.set_title('Top Overrepresented GO Slim Categories by Target% (FDR≤0.05) - ${sample_id}', fontsize=13)
 
-    ax.legend()
+    ax.legend(fontsize=11)
+    ax.tick_params(axis='x', labelsize=11)
 
     plt.tight_layout()
     plt.savefig("${sample_id}_goslim_plot_top_target.png", dpi=300, bbox_inches='tight')
@@ -607,7 +604,6 @@ except Exception as e:
     print(f"Could not create top-target plot: {e}")
 EOF
 
-  # Keep compatibility: default plot name expected downstream
   cp -f "${sample_id}_goslim_plot_multiplier.png" "${sample_id}_goslim_plot.png"
   """
 }

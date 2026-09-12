@@ -14,35 +14,28 @@ process EGGNOG_ANNOTATION {
     
     script:
     """
-    # 1. Run eggNOG-mapper on target proteins
     emapper.py -i $targets_faa \
         -o ${sample_id}_target \
         --output_dir . \
         -m diamond \
         --cpu ${task.cpus} \
         --itype proteins \
-        --go_evidence all \
+        --go_evidence non-electronic \
         --tax_scope 33090 \
         --target_taxa 33090
 
     
-    # 2. Run eggNOG-mapper on background proteins
     emapper.py -i $background_faa \
         -o ${sample_id}_background \
         --output_dir . \
         -m diamond \
         --cpu ${task.cpus} \
         --itype proteins \
-        --go_evidence all \
+        --go_evidence non-electronic \
         --tax_scope 33090 \
         --target_taxa 33090
 
 
-    # 3) Extract GO terms from the GOs column (column 10)
-    #    IMPORTANT:
-    #      - skip comment/header lines starting with '#'
-    #      - keep query ID for EVERY GO term
-    #      - split comma-separated list into one GO per line
     awk -F'\\t' 'BEGIN{OFS="\\t"}
       \$1 !~ /^#/ && \$10 != "-" && \$10 != "" {
         n=split(\$10, a, /,/)
@@ -68,7 +61,6 @@ process EGGNOG_ANNOTATION {
     echo "Target proteins with >=1 GO: \$(cut -f1 ${sample_id}_target_go.txt | sort -u | wc -l)"
     echo "Background proteins with >=1 GO: \$(cut -f1 ${sample_id}_background_go.txt | sort -u | wc -l)"
 
-    # quick sanity: show any 'GO-only' lines (should be 0)
     echo "GO-only lines in target_go (should be 0): \$(awk -F'\\t' 'NF==1{c++} END{print c+0}' ${sample_id}_target_go.txt)"
     echo "GO-only lines in background_go (should be 0): \$(awk -F'\\t' 'NF==1{c++} END{print c+0}' ${sample_id}_background_go.txt)"
     """

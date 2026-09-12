@@ -11,17 +11,14 @@ process CONCAT_ALIGNMENT_DISTRIBUTION {
 
     script:
     """
-    # create a temporary file to store headers and data
     header_written=0
 
     for file in ${stats_files.join(' ')}
     do
         if [ \$header_written -eq 0 ]; then
-            # write the header from the first file
             head -n 1 \$file > virus_alignment_dist.txt
             header_written=1
         fi
-        # append only the data row (skip header)
         tail -n +2 \$file >> virus_alignment_dist.txt
     done
     """
