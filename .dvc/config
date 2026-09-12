@@ -1,2 +1,4 @@
+[core]
+    remote = origin
 ['remote "origin"']
     url = https://dagshub.com/peterribic0/Cross-kingdom-sRNA-pipeline.dvc
